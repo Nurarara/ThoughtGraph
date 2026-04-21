@@ -1,0 +1,274 @@
+/* ── ThoughtGraph — Mechanical Hive-Mind ── */
+
+:root {
+  --bg: #f5f3ef;
+  --text: #1a1a1a;
+  --text-secondary: #6b6b6b;
+  --text-muted: #a0a0a0;
+  --cluster-tech: #7a9bb5;
+  --cluster-growth: #9b8abf;
+  --cluster-purpose: #c4a062;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Layout shell ── */
+
+.app-shell {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.canvas-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.canvas-layer canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Watermark ── */
+
+.watermark {
+  position: absolute;
+  top: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 1;
+  user-select: none;
+}
+
+.watermark-title {
+  font-weight: 600;
+  font-size: 1.1rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.08;
+}
+
+.watermark-subtitle {
+  font-weight: 300;
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  color: var(--text);
+  opacity: 0.05;
+  margin-top: 4px;
+}
+
+/* ── Legend ── */
+
+.legend {
+  position: absolute;
+  bottom: 100px;
+  left: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 1;
+  user-select: none;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.legend-ring {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.legend-label {
+  font-weight: 300;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  opacity: 0.22;
+}
+
+/* ── Thought input ── */
+
+.thought-input-wrap {
+  position: absolute;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  width: min(520px, calc(100% - 64px));
+}
+
+.thought-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid rgba(26, 26, 26, 0.15);
+  background: transparent;
+  font-family: 'Sora', sans-serif;
+  font-weight: 300;
+  font-size: 0.92rem;
+  color: var(--text);
+  padding: 12px 0;
+  outline: none;
+  transition: border-color 300ms ease;
+  letter-spacing: 0.01em;
+}
+
+.thought-input::placeholder {
+  color: var(--text-muted);
+  font-weight: 300;
+}
+
+.thought-input:focus {
+  border-bottom-color: rgba(26, 26, 26, 0.4);
+}
+
+/* ── Detail card ── */
+
+.detail-card {
+  position: absolute;
+  z-index: 3;
+  width: 280px;
+  padding: 20px;
+  border: 1px solid;
+  border-radius: 2px;
+  background: transparent;
+  pointer-events: auto;
+  animation: detail-fade-in 300ms ease forwards;
+}
+
+@keyframes detail-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.detail-card-content {
+  font-weight: 300;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+
+.detail-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.detail-card-meta span {
+  font-weight: 300;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.detail-card-cluster {
+  font-weight: 400 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em !important;
+  font-size: 0.68rem !important;
+}
+
+/* ── Seed button ── */
+
+.seed-button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  background: transparent;
+  border: 1px solid rgba(26, 26, 26, 0.12);
+  border-radius: 2px;
+  padding: 14px 28px;
+  font-family: 'Sora', sans-serif;
+  font-weight: 300;
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 300ms ease;
+}
+
+.seed-button:hover {
+  color: var(--text);
+  border-color: rgba(26, 26, 26, 0.3);
+}
+
+/* ── Node count ── */
+
+.node-count {
+  position: absolute;
+  top: 36px;
+  right: 32px;
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
+  font-weight: 300;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  opacity: 0.12;
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 600px) {
+  .watermark {
+    top: 24px;
+  }
+
+  .legend {
+    bottom: 88px;
+    left: 20px;
+  }
+
+  .thought-input-wrap {
+    bottom: 20px;
+    width: calc(100% - 40px);
+  }
+
+  .detail-card {
+    width: 240px;
+  }
+
+  .node-count {
+    top: 24px;
+    right: 20px;
+  }
+}

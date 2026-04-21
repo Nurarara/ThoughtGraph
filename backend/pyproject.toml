@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thoughtgraph-backend"
+version = "0.1.0"
+description = "FastAPI backend for ThoughtGraph"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "sqlalchemy>=2.0.31",
+  "pydantic-settings>=2.3.4",
+  "numpy>=2.1.0",
+  "scikit-learn>=1.5.1",
+  "aiosqlite>=0.20.0",
+  "orjson>=3.10.6",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.2",
+  "httpx>=0.27.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["app/tests"]
+
+[tool.setuptools.packages.find]
+where = ["."]

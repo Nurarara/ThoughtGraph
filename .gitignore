@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/thoughtgraph.db
+thoughtgraph.db
+frontend/node_modules/
+frontend/dist/
+.DS_Store
+
+# Logs
+*.log
+
+# Build artifacts
+*.tsbuildinfo
+frontend/vite.config.d.ts
+
+# Python egg-info
+*.egg-info/
+
+# Env
+.env
+
