@@ -10,6 +10,7 @@ from app.schemas.social import (
     FollowState,
     InfluenceScoreRead,
     ReplyThreadRead,
+    SerendipityResponse,
     SocialFeedItem,
     SocialRelationship,
     TrendingClusterRead,
@@ -19,6 +20,7 @@ from app.services.social_service import (
     follow_user,
     get_reply_thread,
     get_relationship,
+    get_serendipity_matches,
     get_suggested_users,
     get_trending_clusters,
     list_followers,
@@ -114,3 +116,11 @@ def suggested_users(
     current_user_id: str = Depends(get_current_user_id),
 ) -> list[FollowListItem]:
     return get_suggested_users(session, current_user_id)
+
+
+@router.get("/serendipity", response_model=SerendipityResponse)
+def serendipity(
+    session: Session = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+) -> SerendipityResponse:
+    return get_serendipity_matches(session, current_user_id)

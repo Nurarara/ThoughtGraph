@@ -13,6 +13,8 @@ from app.models.user import User
 from app.schemas.social import (
     FollowListItem,
     ReplyThreadRead,
+    SerendipityMatchRead,
+    SerendipityResponse,
     SocialFeedItem,
     SocialRelationship,
     SocialReplyRead,
@@ -189,6 +191,7 @@ def seed_social_demo(session: Session, current_user_id: str) -> dict[str, int]:
                 display_name=payload["display_name"],
                 bio=payload["bio"],
                 is_public=True,
+                serendipity_enabled=True,
             )
             session.add(user)
             created_users += 1
@@ -360,3 +363,64 @@ def get_suggested_users(session: Session, user_id: str, limit: int = 10) -> list
         )
         for _, user in scored[:limit]
     ]
+
+
+def get_serendipity_matches(session: Session, user_id: str, limit: int = 3) -> SerendipityResponse:
+    user = ensure_user_exists(session, user_id)
+    latest = session.scalar(
+        select(Thought)
+        .where(Thought.user_id == user_id)
+        .order_by(desc(Thought.created_at))
+    )
+    latest_preview = latest.content[:140] if latest else None
+    if latest is None or not user.serendipity_enabled:
+        return SerendipityResponse(enabled=user.serendipity_enabled, latest_thought_preview=latest_preview, matches=[])
+
+    blocked_ids = {user_id, *get_following_ids(session, user_id), *get_followers_ids(session, user_id)}
+    candidate_thoughts = list(
+        session.scalars(
+            select(Thought)
+            .join(User, User.id == Thought.user_id)
+            .where(
+                Thought.visibility == "public",
+                User.is_public.is_(True),
+                User.serendipity_enabled.is_(True),
+            )
+            .order_by(desc(Thought.created_at))
+            .limit(240)
+        )
+    )
+
+    latest_topics = set(latest.topics)
+    seen_users: set[str] = set()
+    matches: list[tuple[float, Thought, list[str]]] = []
+    for thought in candidate_thoughts:
+        if thought.user_id in blocked_ids or thought.user_id in seen_users:
+            continue
+        similarity = cosine_similarity(latest.vector, thought.vector)
+        shared_topics = [
+            topic.replace("_", " ").title()
+            for topic in thought.topics
+            if topic in latest_topics
+        ][:3]
+        if similarity < 0.28 and not shared_topics:
+            continue
+        seen_users.add(thought.user_id)
+        matches.append((similarity, thought, shared_topics))
+
+    matches.sort(key=lambda item: (item[0], len(item[2]), item[1].created_at), reverse=True)
+    return SerendipityResponse(
+        enabled=True,
+        latest_thought_preview=latest_preview,
+        matches=[
+            SerendipityMatchRead(
+                id=thought.id,
+                alias=f"Stranger {index + 1}",
+                thought_preview=thought.content[:180],
+                shared_topics=shared_topics,
+                similarity_score=min(100, max(0, int(round(similarity * 100)))),
+                created_at=thought.created_at,
+            )
+            for index, (similarity, thought, shared_topics) in enumerate(matches[:limit])
+        ],
+    )

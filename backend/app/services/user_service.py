@@ -43,6 +43,7 @@ def ensure_user_exists(session: Session, user_id: str, display_name: str | None 
         display_name=display_name or user_id.replace("-", " ").title(),
         bio="",
         is_public=True,
+        serendipity_enabled=False,
         notification_prefs=DEFAULT_NOTIFICATION_PREFS.copy(),
     )
     session.add(user)
@@ -81,6 +82,7 @@ def get_user_profile(session: Session, user_id: str) -> UserProfileRead:
         follower_count=user.follower_count,
         following_count=user.following_count,
         created_at_public=user.created_at_public,
+        serendipity_enabled=user.serendipity_enabled,
         thought_count=thought_count,
         cluster_count=cluster_count,
         top_clusters=_top_clusters(session, user_id),
@@ -109,6 +111,7 @@ def get_public_user_profile(session: Session, current_user_id: str, user_id: str
             follower_count=user.follower_count,
             following_count=user.following_count,
             created_at_public=user.created_at_public,
+            serendipity_enabled=user.serendipity_enabled if current_user_id == user_id else False,
             thought_count=public_thought_count,
             cluster_count=public_cluster_count,
             top_clusters=_top_clusters(session, user_id, public_only=True),
@@ -126,6 +129,7 @@ def get_public_user_profile(session: Session, current_user_id: str, user_id: str
         follower_count=user.follower_count,
         following_count=user.following_count,
         created_at_public=user.created_at_public,
+        serendipity_enabled=False,
         thought_count=0,
         cluster_count=0,
         top_clusters=[],
@@ -168,6 +172,14 @@ def update_onboarding_state(session: Session, user_id: str, completed: bool) -> 
     session.add(user)
     session.commit()
     return user.onboarding_v2_completed
+
+
+def update_discovery_settings(session: Session, user_id: str, *, serendipity_enabled: bool) -> bool:
+    user = ensure_user_exists(session, user_id)
+    user.serendipity_enabled = serendipity_enabled
+    session.add(user)
+    session.commit()
+    return user.serendipity_enabled
 
 
 def bulk_update_thought_visibility(session: Session, user_id: str, visibility: str) -> int:

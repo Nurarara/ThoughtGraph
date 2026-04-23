@@ -14,6 +14,7 @@ class UserProfileRead(BaseModel):
     follower_count: int
     following_count: int
     created_at_public: bool
+    serendipity_enabled: bool = False
     thought_count: int
     cluster_count: int
     top_clusters: list[str]
@@ -65,3 +66,11 @@ class OnboardingStateUpdate(BaseModel):
 
 class OnboardingStateRead(BaseModel):
     completed: bool
+
+
+class DiscoverySettingsUpdate(BaseModel):
+    serendipity_enabled: bool
+
+
+class DiscoverySettingsRead(BaseModel):
+    serendipity_enabled: bool

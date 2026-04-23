@@ -6,7 +6,24 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
-from app.models import Cluster, Edge, Follow, GraphSnapshot, InfluenceScore, Insight, Notification, Thought, User, WeeklyReport
+from app.models import (
+    Cluster,
+    Edge,
+    Follow,
+    Friendship,
+    GraphSnapshot,
+    InfluenceScore,
+    Insight,
+    MagicToken,
+    Notification,
+    Post,
+    PostComment,
+    PostReaction,
+    SessionToken,
+    Thought,
+    User,
+    WeeklyReport,
+)
 from app.models.base import Base
 
 
@@ -18,8 +35,10 @@ ADDITIVE_SQLITE_MIGRATIONS: dict[str, list[str]] = {
         "ALTER TABLE users ADD COLUMN follower_count INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN following_count INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN created_at_public BOOLEAN DEFAULT 1",
+        "ALTER TABLE users ADD COLUMN serendipity_enabled BOOLEAN DEFAULT 0",
         "ALTER TABLE users ADD COLUMN notification_prefs JSON DEFAULT '{}'",
         "ALTER TABLE users ADD COLUMN onboarding_v2_completed BOOLEAN DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN email VARCHAR(320)",
     ],
     "thoughts": [
         "ALTER TABLE thoughts ADD COLUMN visibility VARCHAR(20) DEFAULT 'public'",

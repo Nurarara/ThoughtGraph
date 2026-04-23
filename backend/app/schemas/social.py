@@ -63,3 +63,18 @@ class TrendingClusterRead(BaseModel):
 class SocialFeedItem(BaseModel):
     thought: SocialReplyRead
     relationship: str
+
+
+class SerendipityMatchRead(BaseModel):
+    id: str
+    alias: str
+    thought_preview: str
+    shared_topics: list[str]
+    similarity_score: int
+    created_at: datetime
+
+
+class SerendipityResponse(BaseModel):
+    enabled: bool
+    latest_thought_preview: str | None = None
+    matches: list[SerendipityMatchRead]

@@ -5,7 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_id
 from app.db.session import get_db
+from app.schemas.profile_summary import ProfileSummaryResponse
 from app.schemas.user import (
+    DiscoverySettingsRead,
+    DiscoverySettingsUpdate,
     NotificationPreferencesRead,
     NotificationPreferencesUpdate,
     OnboardingStateRead,
@@ -15,6 +18,7 @@ from app.schemas.user import (
     UserProfileUpdate,
     UserSearchResult,
 )
+from app.services.profile_summary_service import get_profile_summary
 from app.services.user_service import (
     bulk_update_thought_visibility,
     delete_user_account,
@@ -22,6 +26,7 @@ from app.services.user_service import (
     get_public_user_profile,
     get_user_profile,
     search_users,
+    update_discovery_settings,
     update_notification_preferences,
     update_onboarding_state,
     update_user_profile,
@@ -65,6 +70,20 @@ def get_user(
     return get_public_user_profile(session, current_user_id, user_id)
 
 
+@router.get("/{user_id}/summary", response_model=ProfileSummaryResponse)
+def get_user_summary(
+    user_id: str,
+    session: Session = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    result = get_profile_summary(session, current_user_id, user_id)
+    if result is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="user not found")
+    return result
+
+
 @router.patch("/me/notification-preferences", response_model=NotificationPreferencesRead)
 def update_me_notification_preferences(
     payload: NotificationPreferencesUpdate,
@@ -83,6 +102,21 @@ def update_me_onboarding(
     current_user_id: str = Depends(get_current_user_id),
 ) -> OnboardingStateRead:
     return OnboardingStateRead(completed=update_onboarding_state(session, current_user_id, payload.completed))
+
+
+@router.patch("/me/discovery", response_model=DiscoverySettingsRead)
+def update_me_discovery(
+    payload: DiscoverySettingsUpdate,
+    session: Session = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+) -> DiscoverySettingsRead:
+    return DiscoverySettingsRead(
+        serendipity_enabled=update_discovery_settings(
+            session,
+            current_user_id,
+            serendipity_enabled=payload.serendipity_enabled,
+        )
+    )
 
 
 @router.patch("/me/thought-visibility")

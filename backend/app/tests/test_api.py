@@ -236,6 +236,14 @@ def test_v2_snapshots_reports_discovery_and_settings(client: TestClient) -> None
     assert trending.status_code == 200
     assert trending.json()
 
+    discovery = client.patch("/api/users/me/discovery", json={"serendipity_enabled": True})
+    assert discovery.status_code == 200
+    assert discovery.json()["serendipity_enabled"] is True
+
+    serendipity = client.get("/api/social/serendipity")
+    assert serendipity.status_code == 200
+    assert serendipity.json()["enabled"] is True
+
     suggested = client.get("/api/social/suggested-users")
     assert suggested.status_code == 200
     assert suggested.json()
@@ -281,3 +289,23 @@ def test_v2_delete_account(client: TestClient) -> None:
     graph = client.get("/api/graph")
     assert graph.status_code == 200
     assert graph.json()["nodes"] == []
+
+
+def test_private_post_comments_are_not_visible_to_other_users(client: TestClient) -> None:
+    client.post("/api/social/demo/seed")
+    created = client.post(
+        "/api/posts/",
+        json={
+            "cluster_key": "technology",
+            "caption": "Private signal",
+            "visibility": "private",
+        },
+    )
+    assert created.status_code == 200
+    post_id = created.json()["id"]
+
+    response = client.get(
+        f"/api/posts/{post_id}/comments",
+        headers={"X-ThoughtGraph-User": "maya-chen"},
+    )
+    assert response.status_code == 404
