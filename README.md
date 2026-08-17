@@ -1,199 +1,125 @@
 # ThoughtGraph
 
-ThoughtGraph is a local-first thought-mapping product that turns short-form thoughts into a semantic graph, extracts clusters and patterns, and adds a social layer so users can see how their thinking connects to other people.
+> See what your thinking is becoming.
 
-The core idea is simple: most thinking tools store text, but they do not reveal structure. ThoughtGraph treats each thought as a node, links thoughts by semantic similarity, groups them into evolving clusters, and uses that graph to generate insights, influence signals, snapshots, and weekly summaries.
+ThoughtGraph is a private, spatial thinking environment. Instead of storing ideas in a long list, it places them in a living map where related thoughts move together, themes become visible, and reflection is tied back to real evidence.
 
-## Purpose
+The project currently runs as a local-first prototype: your data is stored on your machine by default, no external AI provider is required, and the core experience works without Kafka, Neo4j, Redis, or a cloud account.
 
-ThoughtGraph exists to help a user answer three questions:
+## The idea in plain English
 
-1. What am I actually thinking about?
-2. How is my thinking changing over time?
-3. How is my mind being shaped by other people?
+Most note-taking tools remember *what* you wrote. ThoughtGraph is exploring whether software can also help you see:
 
-V1 answered the first two for a single user. V2 expands the product into a social intelligence layer without breaking the solo experience.
+- which ideas keep returning;
+- which topics are beginning to connect;
+- where your attention is changing over time;
+- what sources are shaping your saved material; and
+- how your thinking overlaps with people you choose to connect with.
 
-## Product Goal
+It does this visually. Thoughts, links, images, and videos become nodes. Meaningful relationships become edges. Groups of related nodes become clusters that can be explored by panning, zooming, and focusing.
 
-The product goal is to make mental structure visible.
+ThoughtGraph is not mind-reading software, a personality test, or a medical or psychological assessment. Its reflective features describe patterns in the material you saved and show the evidence behind those descriptions.
 
-Instead of presenting a flat feed of notes or posts, ThoughtGraph aims to show:
+## What you can do today
 
-- recurring topics
-- emotional concentration
-- semantic tension between ideas
-- dominant clusters of thought
-- cross-user reply and influence patterns
-- shareable states of mind
+The current product supports:
 
-The intended outcome is not just storage. It is reflection, interpretation, and network context.
+- a cinematic public landing experience at `/`;
+- a graph-first workspace at `/app`;
+- passwordless magic-link sign-in;
+- private, friends-only, and public visibility;
+- thoughts, links, images, and videos as first-class graph nodes;
+- automatic local embeddings, semantic connections, clusters, and graph layout;
+- search that brings matching nodes back into spatial context;
+- replies, quotations, follows, friendships, restrictions, and social neighbourhoods;
+- explainable discovery of related ideas and adjacent people;
+- evidence-backed attention-drift and source-shaping reflections;
+- feedback, correction, annotation, and dismissal for reflective insights;
+- media upload, processing, thumbnails, playback, size limits, and safe storage paths;
+- provenance, trust, moderation, replay, and operational inspection surfaces for prototype evaluation; and
+- an explicit migration tool for importing older V1 thoughts into the graph-native model.
 
-## What Is Implemented
+### A typical journey
 
-This repository currently includes a working V1 foundation plus a broad V2 implementation.
+1. Capture a thought privately.
+2. ThoughtGraph places it in the semantic field.
+3. Related ideas and themes move into view.
+4. Open a node to read its full content, thread, quotation, and connections.
+5. Explore nearby public or friends-only material when you choose to.
+6. Run a reflection and inspect the exact nodes and measurements behind it.
 
-### V1 foundation
+## Honest scope
 
-- thought creation and storage
-- semantic similarity graph generation
-- connected-component clustering
-- insight generation
-- timeline filtering
-- WebSocket graph updates
-- local demo seed data
+ThoughtGraph is an ambitious product prototype, not a finished public network.
 
-### V2 social layer
+| Area | Current state |
+| --- | --- |
+| Personal graph | Working end to end |
+| Search and spatial navigation | Working end to end |
+| Social relationships and discovery | Working prototype |
+| Evidence-backed reflection | Working for attention drift and source shaping |
+| Image and video uploads | Working locally |
+| Media safety | Uploaded media remains `unreviewed` until explicitly approved and is excluded from discovery |
+| Trust, provenance, moderation, and ops | Inspectable prototype boundaries |
+| Production deployment | Not ready without the hardening work described below |
 
-- user profiles
-- follow and unfollow flows
-- public and private thought visibility
-- cross-user replies
-- social graph overlay on the main graph
-- notification system
-- influence scoring
-- social feed
-- trending clusters
-- suggested users
-- graph snapshots
-- weekly reports
-- onboarding state
-- notification preferences
-- data export
-- account deletion
+Some older feed-style modules still exist in the repository for migration history. The active product is the graph-native application mounted through [`backend/app/api/router.py`](backend/app/api/router.py) and [`frontend/src/components/GraphShell.tsx`](frontend/src/components/GraphShell.tsx).
 
-## Product Principles
+The active product does **not** currently promise WebSocket updates, account export, account deletion, snapshots, or weekly reports. Those appeared in earlier prototypes but are not mounted in the current API.
 
-The repo is built around a few constraints:
-
-- V2 is additive. V1 behavior remains the default.
-- Existing core endpoints stay compatible by default.
-- The solo graph experience must still work for a user who never follows anyone.
-- Social features are opt-in, not forced.
-- The architecture should be easy to swap from local heuristics to external services later.
-
-## Architecture
-
-### Backend
-
-The backend is a FastAPI application in [`backend/app`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/backend/app).
-
-Main responsibilities:
-
-- persist thoughts, users, follows, notifications, reports, and snapshots
-- compute graph structure
-- compute insights and influence scores
-- expose REST and WebSocket APIs
-- keep V1 and V2 response contracts stable
-
-Key modules:
-
-- [`backend/app/main.py`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/backend/app/main.py): app bootstrap
-- [`backend/app/api/routes`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/backend/app/api/routes): API routes
-- [`backend/app/services/graph_pipeline.py`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/backend/app/services/graph_pipeline.py): graph building and social overlay
-- [`backend/app/services/insight_engine.py`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/backend/app/services/insight_engine.py): insight generation
-- [`backend/app/services/social_service.py`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/backend/app/services/social_service.py): replies, feed, discovery, follows
-- [`backend/app/services/influence_service.py`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/backend/app/services/influence_service.py): influence scoring
-- [`backend/app/services/snapshot_service.py`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/backend/app/services/snapshot_service.py): snapshot generation
-- [`backend/app/services/report_service.py`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/backend/app/services/report_service.py): weekly report generation
-
-### Frontend
-
-The frontend is a React + TypeScript + Vite app in [`frontend/src`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/frontend/src).
-
-Main responsibilities:
-
-- render the main graph experience
-- render additive V2 pages and panels
-- manage graph, social, notification, snapshot, and report state
-- preserve the original V1 layout while adding social capabilities
-
-Key modules:
-
-- [`frontend/src/App.tsx`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/frontend/src/App.tsx): top-level shell and route switching
-- [`frontend/src/components/NeuralGalaxy.tsx`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/frontend/src/components/NeuralGalaxy.tsx): 2D/3D graph rendering
-- [`frontend/src/hooks/useThoughtGraph.ts`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/frontend/src/hooks/useThoughtGraph.ts): core graph state
-- [`frontend/src/hooks/useSocialLayer.ts`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/frontend/src/hooks/useSocialLayer.ts): social/report/snapshot state
-
-## How It Works
-
-### Thought analysis
-
-Each thought is analyzed locally:
-
-- text is embedded using a deterministic local representation
-- emotion is inferred heuristically
-- topics are inferred heuristically
-- pairwise similarity is computed with cosine similarity
-
-### Graph generation
-
-- thoughts become nodes
-- sufficiently similar thoughts become edges
-- connected components become clusters
-- clusters get labels, colors, themes, and trends
-
-### Insight generation
-
-Insights are derived from local graph statistics such as:
-
-- dominant clusters
-- emotional concentration
-- recent changes in activity
-- repeated themes
-
-### Social overlay
-
-When social view is enabled:
-
-- followed users’ public thoughts are added as a second graph layer
-- cross-user semantic links are generated
-- reply links can appear across users
-- social authors are represented separately from the user’s personal graph
-
-## Repository Structure
+## How it works
 
 ```text
-ThoughtGraph/
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   ├── core/
-│   │   ├── db/
-│   │   ├── models/
-│   │   ├── schemas/
-│   │   ├── services/
-│   │   └── tests/
-│   └── pyproject.toml
-├── frontend/
-│   ├── src/
-│   │   ├── api/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   └── store/
-│   └── package.json
-└── README.md
+You capture something
+        |
+        v
+Canonical content node + ownership + visibility
+        |
+        +--> local text embedding
+        +--> semantic edges
+        +--> clusters and spatial coordinates
+        +--> search and discovery projections
+        +--> evidence-backed reflections
 ```
 
-## Local Development
+The important architectural rule is that authored content remains canonical. Search indexes, graph read models, clusters, and reflective outputs are derived views that can be rebuilt.
+
+### Current architecture
+
+- **Frontend:** React, TypeScript, Vite, Canvas, IBM Plex, and Phosphor icons.
+- **Backend:** FastAPI, SQLAlchemy, Pydantic, NumPy, and scikit-learn.
+- **Default database:** SQLite.
+- **Default media storage:** local filesystem.
+- **Embeddings:** deterministic 256-dimensional local vectors.
+- **Jobs and events:** persisted boundaries that run in-process by default.
+- **Read models:** local, rebuildable search and graph projections.
+
+This is a modular monolith on purpose. It keeps the product easy to run while preserving boundaries that can be moved to dedicated infrastructure later.
+
+## Run it locally on Windows
 
 ### Requirements
 
-- Python 3.11+
-- Node.js 18+
-- npm
+- Python 3.11 or newer;
+- Node.js 20.19 or newer, or Node.js 22.12 or newer; and
+- npm.
 
-### Backend setup
+### 1. Start the backend
+
+Open PowerShell in the project folder:
 
 ```powershell
 cd backend
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e .[dev]
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-### Frontend setup
+Leave that terminal open.
+
+### 2. Start the frontend
+
+Open a second PowerShell window in the project folder:
 
 ```powershell
 cd frontend
@@ -201,162 +127,168 @@ npm install
 npm run dev
 ```
 
-### Production build
+### 3. Open ThoughtGraph
 
-```powershell
-cd frontend
-npm run build
-```
+Visit [http://127.0.0.1:5174](http://127.0.0.1:5174).
 
-## Environment Variables
+In development mode, enter an email address and use the secure sign-in link shown by the application. A real email provider is optional locally.
 
-### Backend
+The API documentation is available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+
+### If the page says “Failed to fetch”
+
+Check these in order:
+
+1. Open [http://127.0.0.1:8000/api/health](http://127.0.0.1:8000/api/health). If it does not load, restart the backend.
+2. Confirm the frontend is running on port `5174`.
+3. Confirm [`frontend/.env.example`](frontend/.env.example) points to the same backend origin.
+4. Restart the frontend after changing an environment variable.
+
+## Privacy and safety
+
+- New nodes are private by default.
+- Replies and quotations inherit the target's visibility by default.
+- Every authenticated request is resolved to one owner.
+- Search, graph, detail, and discovery results are visibility-filtered.
+- Session tokens are stored as hashes on the backend.
+- Upload byte limits are checked before and during streaming.
+- Storage keys are confined to the configured media directory.
+- Reflective insights include limitations and evidence references.
+- Feedback events never include private annotation or evidence text.
+
+### Important development warning
+
+The default configuration is designed for local development. Do not expose it directly to the public internet.
+
+Before any real deployment, at minimum:
+
+- set `THOUGHTGRAPH_AUTH_MODE=production`;
+- set `THOUGHTGRAPH_ALLOW_DEV_AUTH_BYPASS=false`;
+- keep `THOUGHTGRAPH_ALLOW_DEV_USER_HEADER_IMPERSONATION=false`;
+- configure SMTP for magic-link delivery;
+- restrict CORS to the real frontend domain;
+- use a managed database and verified migrations;
+- use managed object storage and backups;
+- add rate limiting and abuse protection; and
+- connect a real moderation provider or human review queue.
+
+## How the project can scale
+
+Scaling should follow real product demand rather than adding infrastructure for appearance.
+
+### Stage 1: private alpha
+
+Keep the modular monolith, then add:
+
+- PostgreSQL with a production database driver;
+- versioned Alembic migrations;
+- managed object storage for media;
+- production email delivery and hardened authentication;
+- database and media backups;
+- a real moderation/review workflow;
+- CI, error reporting, metrics, and structured logs; and
+- browser end-to-end tests for the core journey.
+
+### Stage 2: growing community
+
+When inline work becomes slow or traffic becomes uneven:
+
+- move embedding, media, graph projection, and reflection jobs to background workers;
+- introduce a durable queue and retry policies;
+- add Redis only for measured caching or coordination needs;
+- place media behind a CDN;
+- add rate limiting, quotas, and stronger anti-abuse controls;
+- scale search into OpenSearch when the local read model is no longer sufficient; and
+- partition heavy graph projection work by user or neighbourhood.
+
+### Stage 3: large network
+
+Only when scale justifies the operational cost:
+
+- move internal event contracts to Kafka or another durable event transport;
+- use Temporal or an equivalent system for long-running workflows;
+- evaluate Neo4j for traversal-heavy queries that PostgreSQL cannot serve efficiently;
+- separate high-traffic services behind stable contracts;
+- add tenant isolation, regional data policies, and disaster recovery; and
+- introduce calibrated model providers only where they outperform the explainable local baseline.
+
+Kafka, Temporal, OpenSearch, and Neo4j are **future boundaries**, not services secretly running in this repository today.
+
+## Project structure
 
 ```text
-THOUGHTGRAPH_DATABASE_URL=sqlite:///./thoughtgraph.db
-THOUGHTGRAPH_CORS_ORIGINS=["http://localhost:5174","http://127.0.0.1:5174","http://localhost:5173","http://127.0.0.1:5173","http://localhost:4173","http://127.0.0.1:4173"]
-THOUGHTGRAPH_APP_URL=http://127.0.0.1:5174
-THOUGHTGRAPH_DEFAULT_USER_ID=local-user
-THOUGHTGRAPH_SEMANTIC_LINK_THRESHOLD=0.23
-THOUGHTGRAPH_SEMANTIC_LINK_LIMIT=5
-THOUGHTGRAPH_GRAPH_WINDOW_DAYS=30
+ThoughtGraph/
+|-- backend/
+|   |-- app/api/          active HTTP routes
+|   |-- app/models/       canonical and derived data models
+|   |-- app/services/     graph, media, discovery, trust, and reflection logic
+|   |-- app/cli/          migration commands
+|   `-- app/tests/        backend regression suite
+|-- frontend/
+|   |-- src/components/   landing, graph workspace, and product surfaces
+|   |-- src/lib/          typed API client and shared decisions
+|   `-- public/           web app assets
+|-- docs/                 engineering contracts and prototype boundaries
+`-- design-qa.md          latest visual verification report
 ```
 
-### Frontend
+Useful starting points:
 
-```text
-VITE_API_URL=http://localhost:8000
-```
+- [`frontend/src/App.tsx`](frontend/src/App.tsx) — landing/workspace routing;
+- [`frontend/src/components/GraphShell.tsx`](frontend/src/components/GraphShell.tsx) — active product shell;
+- [`frontend/src/components/GraphCanvas.tsx`](frontend/src/components/GraphCanvas.tsx) — spatial interaction and rendering;
+- [`frontend/src/lib/apiClient.ts`](frontend/src/lib/apiClient.ts) — typed frontend/backend contract;
+- [`backend/app/api/router.py`](backend/app/api/router.py) — mounted API surface;
+- [`backend/app/services/node_service.py`](backend/app/services/node_service.py) — canonical node creation and reads;
+- [`backend/app/services/graph_service.py`](backend/app/services/graph_service.py) — graph projection and reconciliation;
+- [`backend/app/services/reflective_insight_service.py`](backend/app/services/reflective_insight_service.py) — evidence-backed reflections; and
+- [`docs/phase_6_12_verification.md`](docs/phase_6_12_verification.md) — explicit prototype boundaries.
 
-Examples are included in:
+## Verification
 
-- [`backend/.env.example`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/backend/.env.example)
-- [`frontend/.env.example`](C:/Users/Rounak/OneDrive/Desktop/Projects/ThoughtGraph/frontend/.env.example)
-
-## Running the App
-
-When both services are up:
-
-- frontend: `http://127.0.0.1:5174`
-- backend health: `http://127.0.0.1:8000/api/health`
-
-Useful flows to try:
-
-1. Load seeded mind from the sidebar.
-2. Load the demo social network.
-3. Toggle social view on.
-4. Click a social node and reply.
-5. Open explore, reports, profile, and settings.
-6. Capture a snapshot and open its public route.
-
-## API Surface
-
-### Core V1-style endpoints
-
-- `GET /api/graph`
-- `GET /api/insights`
-- `POST /api/thoughts`
-- `POST /api/demo/seed`
-- `GET /api/ws`
-
-### Additive V2 endpoints
-
-- `GET /api/graph?social=true`
-- `GET /api/users/me`
-- `PATCH /api/users/me`
-- `PATCH /api/users/me/notification-preferences`
-- `PATCH /api/users/me/onboarding`
-- `PATCH /api/users/me/thought-visibility`
-- `GET /api/users/me/export`
-- `DELETE /api/users/me`
-- `GET /api/users/search`
-- `GET /api/users/{user_id}`
-- `POST /api/social/follow/{user_id}`
-- `DELETE /api/social/follow/{user_id}`
-- `GET /api/social/feed`
-- `GET /api/social/replies/{thought_id}`
-- `GET /api/social/influence`
-- `GET /api/social/influence/{user_id}`
-- `GET /api/social/trending-clusters`
-- `GET /api/social/suggested-users`
-- `POST /api/social/demo/seed`
-- `GET /api/notifications`
-- `PATCH /api/notifications/{notification_id}`
-- `POST /api/snapshots`
-- `GET /api/snapshots`
-- `GET /api/snapshots/recent/public`
-- `GET /api/snapshots/public/{snapshot_id}`
-- `DELETE /api/snapshots/{snapshot_id}`
-- `POST /api/reports/generate`
-- `GET /api/reports`
-- `GET /api/reports/latest`
-- `GET /api/reports/{report_id}`
-
-## Testing
-
-Backend tests:
+Run the backend suite:
 
 ```powershell
 cd backend
-.\.venv\Scripts\pytest
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Frontend build validation:
+Run the frontend tests and production build:
 
 ```powershell
 cd frontend
+npm test
 npm run build
+npm audit --omit=dev
 ```
 
-Current status:
+Latest verified baseline:
 
-- backend tests pass
-- frontend production build passes
+- 61 backend tests passed;
+- 19 frontend tests passed;
+- production frontend build passed;
+- production dependency audit reported 0 vulnerabilities; and
+- the Edge browser journey passed with no console, page, or HTTP errors.
 
-## Design Notes
+## Importing thoughts from the older prototype
 
-The current implementation is intentionally local-first.
+The migration command is explicit, idempotent, and creates a verified SQLite backup before applying changes.
 
-That means:
+Preview an import without changing the database:
 
-- no API keys are required
-- no external LLM provider is required
-- no Redis, Celery, or Neo4j is required
-- all core behavior works on SQLite and local heuristics
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m app.cli.migrate_legacy_thoughts `
+  --database .\thoughtgraph.db `
+  --dry-run `
+  --visibility private `
+  --reconcile-projection
+```
 
-This is deliberate. The repo is structured so those systems can be introduced later without rewriting the client contract.
+Replace `--dry-run` with `--apply` only after reviewing the report.
 
-## Scalability Direction
+## Project status
 
-The codebase is organized so it can evolve toward:
+ThoughtGraph has moved beyond a throwaway demo: the graph-native model, privacy rules, upload boundaries, reflective contracts, migration path, and visual product shell are all tested. The next milestone is not “more features.” It is turning the verified local foundation into a safe private alpha with production migrations, real moderation, observability, and browser automation.
 
-- PostgreSQL + Alembic migrations
-- Redis caching
-- Celery task queues for reports and snapshot rendering
-- Neo4j for richer traversal and social graph queries
-- external embedding and LLM providers
-- stronger auth and multi-tenant identity
-
-The current V2 code is a product-grade prototype and local platform foundation, not a finished distributed production deployment.
-
-## Known Limitations
-
-- influence scoring is heuristic, not model-backed
-- snapshot and weekly report rendering use generated SVG data URIs, not object storage
-- there is no real auth provider yet; user identity is resolved locally
-- there is no browser E2E suite yet
-- there is no production-grade async worker pipeline yet
-- the frontend still ships a heavy `three` chunk
-- load testing and launch-monitoring work are still operational tasks, not implemented infrastructure
-
-## Why This Project Matters
-
-Most software helps people publish, consume, or store information. Very little software helps people see the shape of their own mind.
-
-ThoughtGraph is trying to make cognition legible:
-
-- first to the self
-- then in relation to others
-- then as something that can be reflected on, shared, and improved
-
-That is the real goal of the project.
+That is the scope: make thinking visible without pretending that software knows more about a person than the evidence supports.
