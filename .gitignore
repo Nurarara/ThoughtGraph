@@ -6,9 +6,15 @@ backend/.mypy_cache/
 backend/.ruff_cache/
 backend/thoughtgraph.db
 thoughtgraph.db
+*.db.backup-*
 frontend/node_modules/
 frontend/dist/
+frontend/artifacts/
 .DS_Store
+
+# Local runtime media (may contain private user content)
+/storage/
+/backend/storage/
 
 # Logs
 *.log
@@ -22,4 +28,3 @@ frontend/vite.config.d.ts
 
 # Env
 .env
-

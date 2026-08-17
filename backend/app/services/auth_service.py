@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.base import utcnow
@@ -19,6 +19,26 @@ MAGIC_TTL = timedelta(minutes=15)
 SESSION_TTL = timedelta(days=30)
 
 
+def normalize_email(email: str) -> str:
+    cleaned = email.strip().casefold()
+    if len(cleaned) > 320 or cleaned.count("@") != 1:
+        raise ValueError("invalid email")
+    local_part, domain = cleaned.rsplit("@", 1)
+    if not local_part or not domain or len(local_part) > 64 or len(domain) > 255:
+        raise ValueError("invalid email")
+    if any(char.isspace() or ord(char) < 33 for char in cleaned):
+        raise ValueError("invalid email")
+    labels = domain.split(".")
+    if len(labels) < 2:
+        raise ValueError("invalid email")
+    for label in labels:
+        if not label or label.startswith("-") or label.endswith("-"):
+            raise ValueError("invalid email")
+        if not all(char.isalnum() or char == "-" for char in label):
+            raise ValueError("invalid email")
+    return cleaned
+
+
 def _hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -29,6 +49,14 @@ def _derive_user_id(email: str) -> str:
     return f"u-{cleaned}-{uuid.uuid4().hex[:6]}"
 
 
+def _find_user_by_email(session: Session, email: str) -> User | None:
+    return session.scalar(
+        select(User)
+        .where(func.lower(User.email) == email)
+        .order_by(User.created_at.asc(), User.id.asc())
+    )
+
+
 @dataclass
 class IssuedMagicLink:
     token: str
@@ -36,11 +64,12 @@ class IssuedMagicLink:
 
 
 def issue_magic_link(session: Session, email: str) -> IssuedMagicLink:
+    normalized_email = normalize_email(email)
     raw_token = secrets.token_urlsafe(32)
     token_hash = _hash_token(raw_token)
     expires_at = utcnow() + MAGIC_TTL
     record = MagicToken(
-        email=email.lower(),
+        email=normalized_email,
         token_hash=token_hash,
         expires_at=expires_at,
     )
@@ -72,8 +101,8 @@ def verify_magic_and_issue_session(session: Session, raw_token: str) -> Verified
     record.used_at = utcnow()
     session.add(record)
 
-    email = record.email.lower()
-    user = session.scalar(select(User).where(User.email == email))
+    email = normalize_email(record.email)
+    user = _find_user_by_email(session, email)
     is_new = False
     if user is None:
         user = User(
@@ -87,6 +116,9 @@ def verify_magic_and_issue_session(session: Session, raw_token: str) -> Verified
         )
         session.add(user)
         is_new = True
+    elif user.email != email and session.scalar(select(User).where(User.email == email)) is None:
+        user.email = email
+        session.add(user)
 
     raw_session = secrets.token_urlsafe(32)
     session.add(

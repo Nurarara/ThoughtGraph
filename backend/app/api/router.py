@@ -2,29 +2,27 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     auth,
+    discovery,
     friends,
     graph,
-    insights,
-    notifications,
-    posts,
-    reports,
-    snapshots,
+    infra,
+    media,
+    nodes,
+    reflective_insights,
     social,
-    thoughts,
+    trust_moderation,
     users,
-    websocket,
 )
 
 api_router = APIRouter()
 api_router.include_router(auth.router, tags=["auth"])
-api_router.include_router(graph.router, tags=["graph"])
-api_router.include_router(thoughts.router, tags=["thoughts"])
-api_router.include_router(insights.router, tags=["insights"])
-api_router.include_router(users.router, tags=["users"])
-api_router.include_router(social.router, tags=["social"])
+api_router.include_router(discovery.router, tags=["discovery"])
 api_router.include_router(friends.router, tags=["friends"])
-api_router.include_router(posts.router, tags=["posts"])
-api_router.include_router(notifications.router, tags=["notifications"])
-api_router.include_router(snapshots.router, tags=["snapshots"])
-api_router.include_router(reports.router, tags=["reports"])
-api_router.include_router(websocket.router, tags=["ws"])
+api_router.include_router(graph.router, tags=["graph"])
+api_router.include_router(infra.router, tags=["infra"])
+api_router.include_router(media.router, tags=["media"])
+api_router.include_router(nodes.router, tags=["nodes"])
+api_router.include_router(reflective_insights.router, tags=["reflective-insights"])
+api_router.include_router(social.router, tags=["social"])
+api_router.include_router(trust_moderation.router, tags=["trust-moderation"])
+api_router.include_router(users.router, tags=["users"])

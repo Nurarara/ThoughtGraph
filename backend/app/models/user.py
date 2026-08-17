@@ -15,6 +15,7 @@ class User(TimestampMixin, Base):
     bio: Mapped[str] = mapped_column(Text, default="")
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     follower_count: Mapped[int] = mapped_column(default=0)
     following_count: Mapped[int] = mapped_column(default=0)
     created_at_public: Mapped[bool] = mapped_column(Boolean, default=True)
