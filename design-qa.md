@@ -9,10 +9,11 @@
 ## Comparison setup
 
 - Source visual truth:
-  - Landing: `frontend/artifacts/design/selected-landing.png`
+  - Landing v2: `frontend/artifacts/design/selected-landing-v2.png`
   - Product: `frontend/artifacts/design/selected-product.png`
 - Browser-rendered implementation:
-  - Landing: `frontend/artifacts/design/implementation-landing.png`
+  - Landing, returning signed-in user at `/`: `frontend/artifacts/design/implementation-landing-returning.png`
+  - Landing field guide in Reflect mode: `frontend/artifacts/design/implementation-field-guide.png`
   - Product, signed in with a real local graph and a node selected: `frontend/artifacts/design/implementation-product.png`
   - Mobile landing: `frontend/artifacts/design/implementation-landing-mobile.png`
   - Mobile sign-in: `frontend/artifacts/design/implementation-auth-mobile.png`
@@ -25,12 +26,12 @@
   - `frontend/artifacts/design/comparison-detail-focus.png`
   - `frontend/artifacts/design/comparison-graph-focus.png`
 - Viewport and density:
-  - Source images: 1487 × 1058 px.
+  - Landing source: 1536 × 1024 px. Product source: 1487 × 1058 px.
   - Desktop implementation: 1440 × 1024 CSS px at device scale factor 1.
-  - Sources were normalized to 1440 × 1024 with Lanczos resampling before side-by-side comparison.
+  - Sources were normalized to 1440 × 1024 with a centered aspect-preserving fit and Lanczos resampling before side-by-side comparison; the landing source was cropped horizontally rather than stretched.
   - Mobile implementation: 390 × 844 CSS px at device scale factor 1. The visual target did not prescribe a mobile frame, so mobile was evaluated as a responsive extension of the desktop system rather than as a pixel-match target.
 - State:
-  - Landing: signed out, dark observatory theme, idle orbit field.
+  - Landing: returning signed-in user at `/`, dark observatory theme, Connect instrument active. A separate signed-out auth state was also captured.
   - Product: signed in as the local development user, canonical graph loaded, highest-connection node selected, detail panel open.
 - Browser: installed Microsoft Edge, driven through the user-approved standalone Playwright check.
 
@@ -38,6 +39,7 @@
 
 - Fonts and typography: IBM Plex Sans and IBM Plex Mono are self-hosted. The final desktop hero uses the target's two-line wrap, tight display tracking, restrained body width, and technical uppercase labels. Long live-data titles use deliberate truncation with the complete thought immediately below.
 - Spacing and layout rhythm: the landing retains a strong left-to-right narrative and generous field depth. The product keeps the graph primary, uses one bounded detail rail, and moves secondary actions behind progressive disclosure. Square, low-radius instrument surfaces replace generic cards.
+- Interaction model: the landing is now a functional field instrument. Capture, Connect, and Reflect alter the live readout and graph emphasis; the field guide follows the selected mode; entering uses a short spatial transition into `/app`. The product logo returns to `/`, making the opening experience reachable at any time.
 - Colors and visual tokens: near-black blue, cyan, and amber map consistently to environment, orientation, and focus. The target's foreground/background balance, subdued grid, glow restraint, and state contrast are preserved.
 - Image and asset quality: the graph is a real interactive canvas, not a substituted screenshot. Phosphor supplies the interface icons, and the generated app icon is delivered as a sharp 512 px raster asset. No target illustration or non-standard icon was replaced with placeholder glyphs, handmade SVG, or decorative CSS blobs.
 - Copy and content: the landing establishes curiosity, then explains capture, connection, and evidence before asking for sign-in. Product copy is real user data. Reflection language remains explicitly evidence-based and non-clinical.
@@ -59,13 +61,23 @@
    - P2: cluster labels sat inside dense gravity fields, and desktop-level node annotation remained too dense on mobile.
    - Fixes: placed cluster labels above their computed field radius and progressively disclosed mobile node labels only after interaction.
    - Post-fix evidence: `comparison-product.png` and `implementation-product-mobile.png`.
-4. Final comparison — passed.
-   - No actionable P0/P1/P2 findings remain. Residual differences are the expected consequence of rendering canonical live graph content instead of the target's fictional demonstration data.
+4. User-feedback comparison — blocked.
+   - P1: a persisted session bypassed the landing entirely, so a returning user could not see the designed opening experience.
+   - P2: the first target read as a polished static hero rather than a live spatial instrument.
+   - Fixes: separated the public `/` landing from the `/app` workspace, made the graph logo return home, generated the stronger v2 visual target, added the three-stage instrument rail and live readout, and introduced a causal field-entry transition.
+   - Post-fix evidence: `comparison-landing.png`, `implementation-field-guide.png`, and `implementation-landing-returning.png`.
+5. V2 responsive comparison — blocked.
+   - P2: desktop instrument labels were too dense for the 390 px viewport and the field-guide text needed stronger contrast.
+   - Fixes: converted the stage rail into a compact horizontal mobile instrument, kept the complete journey inside 844 px, and strengthened field-guide text contrast.
+   - Post-fix evidence: `implementation-landing-mobile.png` and `implementation-auth-mobile.png`.
+6. Final comparison — passed.
+   - No actionable P0/P1/P2 findings remain. Residual graph-detail differences reflect the target's illustrative density versus a responsive real-time canvas, not missing product behavior.
 
 ## Interaction and runtime checks
 
-- Opened and closed the landing explanation.
+- Switched Capture, Connect, and Reflect instrument states and opened/closed the matching field guide.
 - Opened sign-in and entered an email value.
+- Verified a returning signed-in user sees `/` first and crosses into `/app` through the animated primary action.
 - Selected a real graph node and opened its detail panel.
 - Opened Search, Explore, and Capture, then dismissed each.
 - Opened the mobile navigation and Capture composer.

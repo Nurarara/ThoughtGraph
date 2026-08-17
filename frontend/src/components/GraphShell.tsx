@@ -22,7 +22,7 @@ import { UsersThreeIcon } from "@phosphor-icons/react/UsersThree";
 import { XIcon } from "@phosphor-icons/react/X";
 
 import { GraphCanvas } from "./GraphCanvas";
-import { LandingOrbitField } from "./landing/LandingOrbitField";
+import { LandingOrbitField, type LandingFieldMode } from "./landing/LandingOrbitField";
 import { LaterPhaseCommandCenter } from "./phase/LaterPhaseSurfaces";
 import {
   clearSession,
@@ -67,6 +67,36 @@ const DEFAULT_VIEWPORT: GraphViewport = {
   center_y: 0,
   zoom_hint: 1,
 };
+
+const LANDING_MODES: Array<{
+  id: LandingFieldMode;
+  number: string;
+  title: string;
+  readout: string;
+  detail: string;
+}> = [
+  {
+    id: "capture",
+    number: "01",
+    title: "Capture",
+    readout: "One thought enters the field",
+    detail: "Save the thought while it still has heat. It begins private and keeps its original language.",
+  },
+  {
+    id: "connect",
+    number: "02",
+    title: "Connect",
+    readout: "Relationships surface without a feed",
+    detail: "Ideas attract through meaning, replies, and quotations. You can move through the field without losing context.",
+  },
+  {
+    id: "reflect",
+    number: "03",
+    title: "Reflect",
+    readout: "Change becomes visible through evidence",
+    detail: "Reflection points back to the exact nodes behind it. Confidence describes evidence sufficiency—not certainty about you.",
+  },
+];
 
 const STARTER_THOUGHTS: Array<{
   title: string;
@@ -734,9 +764,13 @@ function NodeComposer({
 function AuthLanding({
   onAuthenticated,
   notice,
+  existingSession,
+  onEnterWorkspace,
 }: {
   onAuthenticated: (session: SessionPayload) => void;
   notice?: string | null;
+  existingSession?: SessionPayload | null;
+  onEnterWorkspace?: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
@@ -746,7 +780,29 @@ function AuthLanding({
   const [busy, setBusy] = useState(false);
   const [authExpanded, setAuthExpanded] = useState(Boolean(notice));
   const [showExplainer, setShowExplainer] = useState(false);
+  const [landingMode, setLandingMode] = useState<LandingFieldMode>("connect");
+  const [entering, setEntering] = useState(false);
   const verifiedUrlTokenRef = useRef<string | null>(null);
+  const enterTimerRef = useRef<number | null>(null);
+  const activeLandingMode = LANDING_MODES.find((mode) => mode.id === landingMode) ?? LANDING_MODES[1];
+
+  useEffect(() => () => {
+    if (enterTimerRef.current !== null) window.clearTimeout(enterTimerRef.current);
+  }, []);
+
+  const enterField = () => {
+    if (!existingSession || !onEnterWorkspace) {
+      setAuthExpanded(true);
+      return;
+    }
+    setEntering(true);
+    enterTimerRef.current = window.setTimeout(onEnterWorkspace, 620);
+  };
+
+  const completeAuthentication = (session: SessionPayload) => {
+    onAuthenticated(session);
+    onEnterWorkspace?.();
+  };
 
   useEffect(() => {
     const tokenFromUrl = new URL(window.location.href).searchParams.get("token");
@@ -763,7 +819,7 @@ function AuthLanding({
       .verifyLink(tokenFromUrl)
       .then((session) => {
         saveSession(session);
-        onAuthenticated(session);
+        completeAuthentication(session);
         const nextUrl = `${window.location.origin}${window.location.pathname}`;
         window.history.replaceState({}, document.title, nextUrl);
       })
@@ -771,7 +827,7 @@ function AuthLanding({
         setError(err instanceof Error ? err.message : "Could not verify token.");
       })
       .finally(() => setBusy(false));
-  }, [onAuthenticated]);
+  }, [onAuthenticated, onEnterWorkspace]);
 
   useEffect(() => {
     if (notice) setAuthExpanded(true);
@@ -815,7 +871,7 @@ function AuthLanding({
     try {
       const session = await graphApi.verifyLink(token.trim());
       saveSession(session);
-      onAuthenticated(session);
+      completeAuthentication(session);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not verify token.");
     } finally {
@@ -824,20 +880,25 @@ function AuthLanding({
   };
 
   return (
-    <div className="auth-shell observatory-landing">
-      <LandingOrbitField />
+    <div className={`auth-shell observatory-landing landing-mode-${landingMode} ${entering ? "is-entering" : ""}`}>
+      <LandingOrbitField mode={landingMode} entering={entering} />
       <header className="landing-header">
         <div className="landing-brand"><PlanetIcon size={18} weight="fill" aria-hidden="true" />ThoughtGraph</div>
         <div className="landing-calibration">private by design&nbsp;&nbsp;/&nbsp;&nbsp;evidence over opinion</div>
       </header>
 
       <main className="landing-hero">
-        <div className="landing-eyebrow">Private spatial intelligence</div>
+        <div className="landing-eyebrow"><span className="landing-live-dot" /> Private spatial intelligence</div>
         <h1><span>See what your</span><span>thinking is becoming.</span></h1>
         <p>Capture ideas. Watch relationships surface. Reflect with evidence—not guesses.</p>
+        <div className="landing-live-readout" aria-live="polite">
+          <span>Live field / {activeLandingMode.number}</span>
+          <strong>{activeLandingMode.readout}</strong>
+        </div>
         <div className="landing-actions">
-          <button className="landing-primary" type="button" onClick={() => setAuthExpanded(true)}>
-            Enter your graph <ArrowRightIcon size={20} weight="bold" aria-hidden="true" />
+          <button className="landing-primary" type="button" onClick={enterField} disabled={entering}>
+            {entering ? "Entering the field" : "Enter the field"}
+            <ArrowRightIcon size={20} weight="bold" aria-hidden="true" />
           </button>
           <button
             className="landing-secondary"
@@ -846,10 +907,25 @@ function AuthLanding({
             onClick={() => setShowExplainer((visible) => !visible)}
           >
             <PlayIcon size={16} weight="fill" aria-hidden="true" />
-            {showExplainer ? "Hide the model" : "See how it works"}
+            {showExplainer ? "Close field guide" : "Open field guide"}
           </button>
         </div>
       </main>
+
+      <nav className="landing-sequence" aria-label="Explore how ThoughtGraph works">
+        {LANDING_MODES.map((mode) => (
+          <button
+            className={landingMode === mode.id ? "active" : ""}
+            type="button"
+            key={mode.id}
+            aria-pressed={landingMode === mode.id}
+            onClick={() => setLandingMode(mode.id)}
+          >
+            <span>{mode.number}</span>
+            <strong>{mode.title}</strong>
+          </button>
+        ))}
+      </nav>
 
       <div className="landing-trust" aria-label="ThoughtGraph principles">
         <span>Private by design</span>
@@ -859,9 +935,23 @@ function AuthLanding({
 
       {showExplainer ? (
         <section className="landing-explainer" aria-label="How ThoughtGraph works">
-          <div><span>01</span><strong>Capture</strong><p>Save the thought before it disappears.</p></div>
-          <div><span>02</span><strong>Connect</strong><p>Related ideas move into view as the graph grows.</p></div>
-          <div><span>03</span><strong>Reflect</strong><p>See change through traceable evidence, never personality guesses.</p></div>
+          <div className="landing-explainer-index">{activeLandingMode.number}</div>
+          <div className="landing-explainer-copy">
+            <span>Field guide / {activeLandingMode.id}</span>
+            <strong>{activeLandingMode.title}</strong>
+            <p>{activeLandingMode.detail}</p>
+          </div>
+          <button
+            className="instrument-icon-button"
+            type="button"
+            aria-label="Next field guide step"
+            onClick={() => {
+              const currentIndex = LANDING_MODES.findIndex((mode) => mode.id === landingMode);
+              setLandingMode(LANDING_MODES[(currentIndex + 1) % LANDING_MODES.length].id);
+            }}
+          >
+            <ArrowRightIcon size={18} aria-hidden="true" />
+          </button>
         </section>
       ) : null}
 
@@ -1020,7 +1110,7 @@ function GraphHeader({
   return (
     <header className={`graph-header ${mobileMenuOpen ? "menu-open" : ""}`}>
       <div className="graph-brand">
-        <div className="graph-brand-mark"><PlanetIcon size={16} weight="fill" aria-hidden="true" />ThoughtGraph</div>
+        <a className="graph-brand-mark" href="/" aria-label="Return to ThoughtGraph landing page"><PlanetIcon size={16} weight="fill" aria-hidden="true" />ThoughtGraph</a>
         <div className="graph-location">
           <button type="button" onClick={onReturnToSelf}>Personal graph</button>
           <span aria-hidden="true">/</span>
@@ -1972,7 +2062,13 @@ function SystemsOverlay({
   );
 }
 
-export function GraphShell() {
+export function GraphShell({
+  showLanding = false,
+  onEnterWorkspace,
+}: {
+  showLanding?: boolean;
+  onEnterWorkspace?: () => void;
+}) {
   const [session, setSession] = useState<SessionPayload | null>(() => loadSession());
   const [graph, setGraph] = useState<GraphNativeResponse | null>(null);
   const [me, setMe] = useState<MeRead | null>(null);
@@ -2513,8 +2609,19 @@ export function GraphShell() {
 
   const firstGraphVisible = Boolean(me && graph && me.node_count === 0 && graph.nodes.length === 0);
 
+  if (showLanding) {
+    return (
+      <AuthLanding
+        onAuthenticated={handleAuthenticated}
+        notice={authNotice}
+        existingSession={session}
+        onEnterWorkspace={onEnterWorkspace}
+      />
+    );
+  }
+
   if (!session || authOpen) {
-    return <AuthLanding onAuthenticated={handleAuthenticated} notice={authNotice} />;
+    return <AuthLanding onAuthenticated={handleAuthenticated} notice={authNotice} onEnterWorkspace={onEnterWorkspace} />;
   }
 
   return (

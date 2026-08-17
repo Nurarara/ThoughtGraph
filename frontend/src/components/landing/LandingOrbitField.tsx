@@ -34,7 +34,15 @@ const LINKS: Array<[number, number]> = [
 const CYAN = "63, 198, 220";
 const AMBER = "244, 174, 66";
 
-export function LandingOrbitField() {
+export type LandingFieldMode = "capture" | "connect" | "reflect";
+
+export function LandingOrbitField({
+  mode,
+  entering = false,
+}: {
+  mode: LandingFieldMode;
+  entering?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pointerRef = useRef({ x: 0.66, y: 0.5, active: false });
 
@@ -104,12 +112,13 @@ export function LandingOrbitField() {
       for (const [fromIndex, toIndex] of LINKS) {
         const from = positions[fromIndex];
         const to = positions[toIndex];
-        const active = fromIndex === 0 || toIndex === 0;
+        const active = mode === "connect" || fromIndex === 0 || toIndex === 0;
         context.beginPath();
         context.moveTo(from.x, from.y);
         context.lineTo(to.x, to.y);
-        context.strokeStyle = `rgba(${active ? AMBER : CYAN}, ${active ? 0.22 : 0.12})`;
-        context.lineWidth = active ? 1.1 : 0.8;
+        const activeAlpha = mode === "connect" ? 0.3 : mode === "reflect" ? 0.2 : 0.14;
+        context.strokeStyle = `rgba(${active ? AMBER : CYAN}, ${active ? activeAlpha : 0.08})`;
+        context.lineWidth = active ? (mode === "connect" ? 1.35 : 1) : 0.7;
         context.stroke();
       }
 
@@ -136,7 +145,7 @@ export function LandingOrbitField() {
         context.strokeStyle = `rgba(${color}, 0.72)`;
         context.stroke();
 
-        if (body.label && width > 760) {
+        if (body.label && width > 760 && (mode !== "capture" || index === 0)) {
           context.font = "500 11px 'IBM Plex Mono', monospace";
           context.fillStyle = `rgba(${color}, 0.92)`;
           context.textAlign = "left";
@@ -163,6 +172,16 @@ export function LandingOrbitField() {
         context.stroke();
       }
 
+      if (mode === "reflect") {
+        const evidenceNode = positions[5];
+        context.setLineDash([4, 6]);
+        context.strokeStyle = `rgba(${CYAN}, 0.62)`;
+        context.beginPath();
+        context.arc(evidenceNode.x, evidenceNode.y, 38 + pulse * 0.5, 0, Math.PI * 2);
+        context.stroke();
+        context.setLineDash([]);
+      }
+
       if (!reducedMotion) frameId = window.requestAnimationFrame(draw);
     };
 
@@ -173,12 +192,12 @@ export function LandingOrbitField() {
       observer.disconnect();
       window.cancelAnimationFrame(frameId);
     };
-  }, []);
+  }, [mode]);
 
   return (
     <canvas
       ref={canvasRef}
-      className="landing-orbit-field"
+      className={`landing-orbit-field ${entering ? "is-entering" : ""}`}
       aria-hidden="true"
       onPointerEnter={() => { pointerRef.current.active = true; }}
       onPointerLeave={() => { pointerRef.current.active = false; }}
