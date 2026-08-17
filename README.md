@@ -198,7 +198,7 @@ python -m pip install -e .[dev]
 ```powershell
 cd frontend
 npm install
-npm run dev -- --host 127.0.0.1 --port 5173
+npm run dev
 ```
 
 ### Production build
@@ -214,7 +214,8 @@ npm run build
 
 ```text
 THOUGHTGRAPH_DATABASE_URL=sqlite:///./thoughtgraph.db
-THOUGHTGRAPH_CORS_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173","http://localhost:4173","http://127.0.0.1:4173"]
+THOUGHTGRAPH_CORS_ORIGINS=["http://localhost:5174","http://127.0.0.1:5174","http://localhost:5173","http://127.0.0.1:5173","http://localhost:4173","http://127.0.0.1:4173"]
+THOUGHTGRAPH_APP_URL=http://127.0.0.1:5174
 THOUGHTGRAPH_DEFAULT_USER_ID=local-user
 THOUGHTGRAPH_SEMANTIC_LINK_THRESHOLD=0.23
 THOUGHTGRAPH_SEMANTIC_LINK_LIMIT=5
@@ -236,7 +237,7 @@ Examples are included in:
 
 When both services are up:
 
-- frontend: `http://127.0.0.1:5173`
+- frontend: `http://127.0.0.1:5174`
 - backend health: `http://127.0.0.1:8000/api/health`
 
 Useful flows to try:

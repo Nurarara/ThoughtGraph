@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     allow_dev_user_header_impersonation: bool = False
     cors_origins: list[str] = Field(
         default_factory=lambda: [
+            "http://localhost:5174",
+            "http://127.0.0.1:5174",
             "http://localhost:5173",
             "http://127.0.0.1:5173",
             "http://localhost:4173",
@@ -33,7 +35,7 @@ class Settings(BaseSettings):
     discovery_candidate_limit: int = 80
     vector_dimensions: int = 256
     run_jobs_inline: bool = True
-    app_url: str = "http://localhost:5173"
+    app_url: str = "http://127.0.0.1:5174"
     media_storage_dir: str = "./storage"
     media_upload_url_ttl_seconds: int = 900
     max_image_upload_bytes: int = 25_000_000

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   graphApi,
@@ -50,11 +50,20 @@ function ReflectiveInsightCard({ insight, api, onFocusNode, onUpdated }: {
   const [saving, setSaving] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const incomingCorrection = insight.feedback.correction ?? "";
+  const incomingAnnotation = insight.feedback.annotation ?? "";
+  const syncedFeedback = useRef({ correction: incomingCorrection, annotation: incomingAnnotation });
 
   useEffect(() => {
-    setCorrection(insight.feedback.correction ?? "");
-    setAnnotation(insight.feedback.annotation ?? "");
-  }, [insight.feedback.annotation, insight.feedback.correction]);
+    if (
+      syncedFeedback.current.correction === incomingCorrection
+      && syncedFeedback.current.annotation === incomingAnnotation
+    ) return;
+
+    syncedFeedback.current = { correction: incomingCorrection, annotation: incomingAnnotation };
+    setCorrection(incomingCorrection);
+    setAnnotation(incomingAnnotation);
+  }, [incomingAnnotation, incomingCorrection]);
 
   const updateFeedback = async (payload: ReflectiveFeedbackUpdate) => {
     setSaving(true);

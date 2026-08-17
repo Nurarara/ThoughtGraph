@@ -56,11 +56,29 @@ def test_health_and_default_profile_bootstrap(client: TestClient) -> None:
     assert payload["cluster_count"] == 0
 
 
+def test_default_dev_cors_allows_thoughtgraph_frontend(client: TestClient) -> None:
+    response = client.options(
+        "/api/auth/request-link",
+        headers={
+            "Origin": "http://127.0.0.1:5174",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5174"
+
+
 def test_magic_link_auth_flow(client: TestClient) -> None:
     request_link = client.post("/api/auth/request-link", json={"email": "builder@example.com"})
     assert request_link.status_code == 200
     link = request_link.json()["magic_link"]
     token = link.split("token=", 1)[1]
+
+    redirect = client.get(link, follow_redirects=False)
+    assert redirect.status_code == 307
+    assert redirect.headers["location"] == f"http://127.0.0.1:5174/?token={token}"
 
     verified = client.post("/api/auth/verify", json={"token": token})
     assert verified.status_code == 200
