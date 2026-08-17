@@ -5,64 +5,60 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_id
 from app.db.session import get_db
-from app.schemas.friendship import FriendRequestCreate, FriendsListResponse, FriendSummary
-from app.services.friendship_service import (
-    list_friends,
-    request_friend,
-    respond_friend,
-    suggest_friends,
-)
+from app.schemas.social import FriendRequestCreate, FriendshipListsRead, SocialRelationshipRead
+from app.services.friendship_service import list_friends, remove_friend, request_friend, respond_friend
 
 router = APIRouter(prefix="/friends")
 
 
-@router.get("/", response_model=FriendsListResponse)
+@router.get("", response_model=FriendshipListsRead)
 def get_friends(
     session: Session = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
-) -> FriendsListResponse:
+) -> FriendshipListsRead:
     return list_friends(session, current_user_id)
 
 
-@router.post("/request", response_model=FriendSummary)
-def create_request(
+@router.post("/request", response_model=SocialRelationshipRead)
+def request_friend_route(
     payload: FriendRequestCreate,
     session: Session = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
-) -> FriendSummary:
+) -> SocialRelationshipRead:
     try:
         return request_friend(session, current_user_id, payload.user_id)
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.get("/suggestions", response_model=list[FriendSummary])
-def suggestions(
-    session: Session = Depends(get_db),
-    current_user_id: str = Depends(get_current_user_id),
-) -> list[FriendSummary]:
-    return suggest_friends(session, current_user_id)
-
-
-@router.post("/{user_id}/accept", response_model=FriendSummary)
-def accept(
+@router.post("/{user_id}/accept", response_model=SocialRelationshipRead)
+def accept_friend_route(
     user_id: str,
     session: Session = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
-) -> FriendSummary:
-    result = respond_friend(session, current_user_id, user_id, accept=True)
-    if result is None:
-        raise HTTPException(status_code=404, detail="request not found")
-    return result
+) -> SocialRelationshipRead:
+    try:
+        return respond_friend(session, current_user_id, user_id, accept=True)
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
 
 
-@router.post("/{user_id}/decline", response_model=FriendSummary)
-def decline(
+@router.post("/{user_id}/decline", response_model=SocialRelationshipRead)
+def decline_friend_route(
     user_id: str,
     session: Session = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
-) -> FriendSummary:
-    result = respond_friend(session, current_user_id, user_id, accept=False)
-    if result is None:
-        raise HTTPException(status_code=404, detail="request not found")
-    return result
+) -> SocialRelationshipRead:
+    try:
+        return respond_friend(session, current_user_id, user_id, accept=False)
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+
+
+@router.delete("/{user_id}", response_model=SocialRelationshipRead)
+def remove_friend_route(
+    user_id: str,
+    session: Session = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+) -> SocialRelationshipRead:
+    return remove_friend(session, current_user_id, user_id)

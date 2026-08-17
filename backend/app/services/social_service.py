@@ -1,426 +1,473 @@
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
+from collections import Counter
 
-from fastapi import HTTPException
-from sqlalchemy import desc, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.models.content_node import ContentNode
 from app.models.follow import Follow
-from app.models.thought import Thought
+from app.models.friendship import Friendship
+from app.models.node_cluster import NodeCluster
 from app.models.user import User
+from app.models.user_restriction import UserRestriction
 from app.schemas.social import (
-    FollowListItem,
-    ReplyThreadRead,
-    SerendipityMatchRead,
-    SerendipityResponse,
-    SocialFeedItem,
-    SocialRelationship,
-    SocialReplyRead,
-    TrendingClusterRead,
+    FriendshipListItem,
+    FriendshipListsRead,
+    SocialNeighborhoodItem,
+    SocialNeighborhoodResponse,
+    SocialProfileRead,
+    SocialRelationshipRead,
 )
-from app.services.broadcast import manager
-from app.services.graph_pipeline import analyze_thought_content, ensure_utc, recompute_graph
-from app.services.notification_service import create_notification
-from app.services.text_analysis import cosine_similarity
+from app.schemas.user import UserSearchResult
+from app.services.event_service import emit_event
 from app.services.user_service import ensure_user_exists
+
+
+def restriction_active(session: Session, source_user_id: str, target_user_id: str, kind: str) -> bool:
+    return (
+        session.scalar(
+            select(UserRestriction).where(
+                UserRestriction.source_user_id == source_user_id,
+                UserRestriction.target_user_id == target_user_id,
+                UserRestriction.kind == kind,
+            )
+        )
+        is not None
+    )
+
+
+def blocked_between(session: Session, a: str, b: str) -> bool:
+    return restriction_active(session, a, b, "blocked") or restriction_active(session, b, a, "blocked")
+
+
+def muted_by(session: Session, source_user_id: str, target_user_id: str) -> bool:
+    return restriction_active(session, source_user_id, target_user_id, "muted")
+
+
+def restricted_by(session: Session, source_user_id: str, target_user_id: str) -> bool:
+    return restriction_active(session, source_user_id, target_user_id, "restricted")
+
+
+def get_friendship_record(session: Session, a: str, b: str) -> Friendship | None:
+    return session.scalar(
+        select(Friendship).where(
+            or_(
+                (Friendship.requester_id == a) & (Friendship.addressee_id == b),
+                (Friendship.requester_id == b) & (Friendship.addressee_id == a),
+            )
+        )
+    )
+
+
+def friendship_state_for(session: Session, viewer_id: str, target_user_id: str) -> str:
+    record = get_friendship_record(session, viewer_id, target_user_id)
+    if record is None:
+        return "none"
+    if record.status == "accepted":
+        return "accepted"
+    if record.status == "pending":
+        return "incoming" if record.addressee_id == viewer_id else "outgoing"
+    return record.status
+
+
+def are_friends(session: Session, a: str, b: str) -> bool:
+    record = get_friendship_record(session, a, b)
+    return record is not None and record.status == "accepted"
 
 
 def get_following_ids(session: Session, user_id: str) -> list[str]:
     return list(session.scalars(select(Follow.following_id).where(Follow.follower_id == user_id)))
 
 
-def get_followers_ids(session: Session, user_id: str) -> list[str]:
+def get_follower_ids(session: Session, user_id: str) -> list[str]:
     return list(session.scalars(select(Follow.follower_id).where(Follow.following_id == user_id)))
 
 
-async def follow_user(session: Session, follower_id: str, target_id: str) -> bool:
-    if follower_id == target_id:
-        raise HTTPException(status_code=400, detail="Cannot follow yourself")
-
-    follower = ensure_user_exists(session, follower_id)
-    target = ensure_user_exists(session, target_id)
-    existing = session.scalar(
-        select(Follow).where(Follow.follower_id == follower_id, Follow.following_id == target_id)
+def get_relationship(session: Session, viewer_id: str, target_user_id: str) -> SocialRelationshipRead:
+    return SocialRelationshipRead(
+        target_user_id=target_user_id,
+        following=target_user_id in set(get_following_ids(session, viewer_id)),
+        followed_by=target_user_id in set(get_follower_ids(session, viewer_id)),
+        friendship_state=friendship_state_for(session, viewer_id, target_user_id),
+        blocked=restriction_active(session, viewer_id, target_user_id, "blocked"),
+        muted=restriction_active(session, viewer_id, target_user_id, "muted"),
+        restricted=restriction_active(session, viewer_id, target_user_id, "restricted"),
+        blocked_by_target=restriction_active(session, target_user_id, viewer_id, "blocked"),
+        restricted_by_target=restriction_active(session, target_user_id, viewer_id, "restricted"),
     )
-    if existing:
-        raise HTTPException(status_code=409, detail="Already following")
-
-    session.add(Follow(follower_id=follower_id, following_id=target_id))
-    follower.following_count += 1
-    target.follower_count += 1
-    session.add_all([follower, target])
-    session.commit()
-
-    notification = create_notification(
-        session,
-        target_id,
-        "new_follower",
-        actor_id=follower_id,
-        content=f"{follower.display_name} started following you.",
-    )
-    if notification.id != "suppressed":
-        await manager.send_to_user(
-            target_id,
-            {
-                "type": "new_follower",
-                "user_id": follower_id,
-                "display_name": follower.display_name,
-                "notification_id": notification.id,
-            },
-        )
-    return True
 
 
-def unfollow_user(session: Session, follower_id: str, target_id: str) -> bool:
-    follow = session.scalar(
-        select(Follow).where(Follow.follower_id == follower_id, Follow.following_id == target_id)
-    )
-    if not follow:
+def can_view_profile(session: Session, viewer_id: str, target_user_id: str) -> bool:
+    if viewer_id == target_user_id:
+        return True
+    if blocked_between(session, viewer_id, target_user_id):
         return False
+    target = ensure_user_exists(session, target_user_id)
+    return target.is_public or are_friends(session, viewer_id, target_user_id)
 
-    follower = ensure_user_exists(session, follower_id)
-    target = ensure_user_exists(session, target_id)
-    follower.following_count = max(0, follower.following_count - 1)
-    target.follower_count = max(0, target.follower_count - 1)
-    session.delete(follow)
-    session.add_all([follower, target])
-    session.commit()
+
+def can_view_node(session: Session, viewer_id: str, node: ContentNode) -> bool:
+    if viewer_id == node.user_id:
+        return True
+    if blocked_between(session, viewer_id, node.user_id):
+        return False
+    if node.visibility == "public":
+        return True
+    if node.visibility == "friends":
+        return are_friends(session, viewer_id, node.user_id) and not restricted_by(session, node.user_id, viewer_id)
     return False
 
 
-def get_relationship(session: Session, current_user_id: str, target_user_id: str) -> SocialRelationship:
-    following = session.scalar(
-        select(Follow).where(Follow.follower_id == current_user_id, Follow.following_id == target_user_id)
+def visible_nodes_for_owner(
+    session: Session,
+    viewer_id: str,
+    owner_user_id: str,
+    *,
+    include_muted: bool = False,
+) -> list[ContentNode]:
+    if viewer_id != owner_user_id and muted_by(session, viewer_id, owner_user_id) and not include_muted:
+        return []
+    nodes = list(
+        session.scalars(
+            select(ContentNode).where(ContentNode.user_id == owner_user_id).order_by(ContentNode.created_at.asc())
+        )
     )
-    followed_by = session.scalar(
-        select(Follow).where(Follow.follower_id == target_user_id, Follow.following_id == current_user_id)
-    )
-    return SocialRelationship(following=following is not None, followed_by=followed_by is not None)
+    return [node for node in nodes if can_view_node(session, viewer_id, node)]
 
 
-def _build_follow_list_items(session: Session, follows: list[Follow], *, followers: bool) -> list[FollowListItem]:
-    user_ids = [follow.follower_id if followers else follow.following_id for follow in follows]
-    users = {user.id: user for user in session.scalars(select(User).where(User.id.in_(user_ids)))}
-
-    cluster_map: dict[str, list[str]] = defaultdict(list)
-    thoughts = list(session.scalars(select(Thought).where(Thought.user_id.in_(user_ids))))
-    for thought in thoughts:
-        for topic in thought.topics[:1]:
-            if topic not in cluster_map[thought.user_id]:
-                cluster_map[thought.user_id].append(topic)
-
-    items = []
-    for follow in follows:
-        user_id = follow.follower_id if followers else follow.following_id
-        user = users.get(user_id)
-        if not user:
+def get_visible_social_user_ids(session: Session, viewer_id: str) -> list[str]:
+    following = get_following_ids(session, viewer_id)
+    friends = accepted_friend_ids(session, viewer_id)
+    user_ids: list[str] = []
+    for candidate in [*following, *friends]:
+        if candidate == viewer_id:
             continue
+        if candidate in user_ids:
+            continue
+        if blocked_between(session, viewer_id, candidate):
+            continue
+        if muted_by(session, viewer_id, candidate):
+            continue
+        user_ids.append(candidate)
+    return user_ids
+
+
+def accepted_friend_ids(session: Session, user_id: str) -> list[str]:
+    rows = session.scalars(
+        select(Friendship).where(
+            Friendship.status == "accepted",
+            or_(Friendship.requester_id == user_id, Friendship.addressee_id == user_id),
+        )
+    ).all()
+    return [row.addressee_id if row.requester_id == user_id else row.requester_id for row in rows]
+
+
+def follow_user(session: Session, follower_id: str, target_user_id: str) -> SocialRelationshipRead:
+    ensure_user_exists(session, follower_id)
+    target = ensure_user_exists(session, target_user_id)
+    if follower_id == target_user_id:
+        raise ValueError("cannot follow yourself")
+    if blocked_between(session, follower_id, target_user_id):
+        raise ValueError("relationship unavailable")
+    existing = session.scalar(
+        select(Follow).where(Follow.follower_id == follower_id, Follow.following_id == target_user_id)
+    )
+    if existing is None:
+        session.add(Follow(follower_id=follower_id, following_id=target_user_id))
+        follower = ensure_user_exists(session, follower_id)
+        follower.following_count += 1
+        target.follower_count += 1
+        session.add_all([follower, target])
+        emit_event(
+            session,
+            event_type="follow_created",
+            aggregate_type="follow",
+            aggregate_id=f"{follower_id}:{target_user_id}",
+            actor_id=follower_id,
+            payload={"target_user_id": target_user_id},
+        )
+        session.commit()
+    return get_relationship(session, follower_id, target_user_id)
+
+
+def unfollow_user(session: Session, follower_id: str, target_user_id: str) -> SocialRelationshipRead:
+    existing = session.scalar(
+        select(Follow).where(Follow.follower_id == follower_id, Follow.following_id == target_user_id)
+    )
+    if existing is not None:
+        session.delete(existing)
+        follower = ensure_user_exists(session, follower_id)
+        target = ensure_user_exists(session, target_user_id)
+        follower.following_count = max(0, follower.following_count - 1)
+        target.follower_count = max(0, target.follower_count - 1)
+        session.add_all([follower, target])
+        session.commit()
+    return get_relationship(session, follower_id, target_user_id)
+
+
+def request_friendship(session: Session, requester_id: str, target_user_id: str) -> SocialRelationshipRead:
+    ensure_user_exists(session, requester_id)
+    ensure_user_exists(session, target_user_id)
+    if requester_id == target_user_id:
+        raise ValueError("cannot friend yourself")
+    if blocked_between(session, requester_id, target_user_id):
+        raise ValueError("relationship unavailable")
+    record = get_friendship_record(session, requester_id, target_user_id)
+    event_type: str | None = None
+    event_payload: dict | None = None
+    if record is None:
+        record = Friendship(requester_id=requester_id, addressee_id=target_user_id, status="pending")
+        session.add(record)
+        event_type = "friendship_requested"
+        event_payload = {"target_user_id": target_user_id}
+    elif record.status == "pending" and record.addressee_id == requester_id:
+        record.status = "accepted"
+        event_type = "friendship_accepted"
+        event_payload = {"requester_id": target_user_id}
+    elif record.status != "accepted":
+        record.requester_id = requester_id
+        record.addressee_id = target_user_id
+        record.status = "pending"
+        event_type = "friendship_requested"
+        event_payload = {"target_user_id": target_user_id}
+    session.flush()
+    if event_type and event_payload is not None:
+        emit_event(
+            session,
+            event_type=event_type,
+            aggregate_type="friendship",
+            aggregate_id=record.id,
+            actor_id=requester_id,
+            payload=event_payload,
+        )
+        session.commit()
+    return get_relationship(session, requester_id, target_user_id)
+
+
+def respond_friendship(session: Session, current_user_id: str, requester_id: str, accept: bool) -> SocialRelationshipRead:
+    record = get_friendship_record(session, current_user_id, requester_id)
+    if record is None or record.addressee_id != current_user_id or record.status != "pending":
+        raise ValueError("friend request not found")
+    record.status = "accepted" if accept else "declined"
+    emit_event(
+        session,
+        event_type="friendship_accepted" if accept else "friendship_declined",
+        aggregate_type="friendship",
+        aggregate_id=record.id,
+        actor_id=current_user_id,
+        payload={"requester_id": requester_id},
+    )
+    session.commit()
+    return get_relationship(session, current_user_id, requester_id)
+
+
+def remove_friendship(session: Session, current_user_id: str, target_user_id: str) -> SocialRelationshipRead:
+    record = get_friendship_record(session, current_user_id, target_user_id)
+    if record is not None:
+        session.delete(record)
+        session.commit()
+    return get_relationship(session, current_user_id, target_user_id)
+
+
+def set_restriction(session: Session, source_user_id: str, target_user_id: str, kind: str, active: bool) -> SocialRelationshipRead:
+    ensure_user_exists(session, source_user_id)
+    ensure_user_exists(session, target_user_id)
+    if source_user_id == target_user_id:
+        raise ValueError("cannot restrict yourself")
+    existing = session.scalar(
+        select(UserRestriction).where(
+            UserRestriction.source_user_id == source_user_id,
+            UserRestriction.target_user_id == target_user_id,
+            UserRestriction.kind == kind,
+        )
+    )
+    if active:
+        if existing is None:
+            existing = UserRestriction(source_user_id=source_user_id, target_user_id=target_user_id, kind=kind)
+            session.add(existing)
+        if kind == "blocked":
+            _drop_social_links_between(session, source_user_id, target_user_id)
+    elif existing is not None:
+        session.delete(existing)
+    emit_event(
+        session,
+        event_type="relationship_restricted",
+        aggregate_type="user_restriction",
+        aggregate_id=f"{source_user_id}:{target_user_id}:{kind}",
+        actor_id=source_user_id,
+        payload={"target_user_id": target_user_id, "kind": kind, "active": active},
+    )
+    session.commit()
+    return get_relationship(session, source_user_id, target_user_id)
+
+
+def get_profile(session: Session, viewer_id: str, target_user_id: str) -> SocialProfileRead:
+    user = ensure_user_exists(session, target_user_id)
+    relationship = get_relationship(session, viewer_id, target_user_id)
+    if relationship.blocked or relationship.blocked_by_target:
+        raise ValueError("user not found")
+
+    full = can_view_profile(session, viewer_id, target_user_id)
+    visible_nodes = visible_nodes_for_owner(session, viewer_id, target_user_id, include_muted=True)
+    top_clusters = _top_clusters_for_visible_nodes(session, visible_nodes)
+    return SocialProfileRead(
+        id=user.id,
+        display_name=user.display_name,
+        bio=user.bio if full or viewer_id == target_user_id else "",
+        is_public=user.is_public,
+        node_count=len(visible_nodes),
+        cluster_count=len({node.cluster_id for node in visible_nodes if node.cluster_id}),
+        top_clusters=top_clusters,
+        created_at=user.created_at if full or viewer_id == target_user_id else None,
+        relationship=relationship,
+    )
+
+
+def search_users(session: Session, viewer_id: str, query: str) -> list[UserSearchResult]:
+    normalized = query.strip().lower()
+    users = list(session.scalars(select(User).order_by(User.follower_count.desc(), User.display_name.asc())))
+    results: list[UserSearchResult] = []
+    for user in users:
+        if user.id == viewer_id:
+            continue
+        if normalized and normalized not in user.display_name.lower() and normalized not in user.bio.lower():
+            continue
+        if blocked_between(session, viewer_id, user.id):
+            continue
+        if not user.is_public and not are_friends(session, viewer_id, user.id):
+            continue
+        results.append(
+            UserSearchResult(
+                id=user.id,
+                display_name=user.display_name,
+                bio=user.bio if can_view_profile(session, viewer_id, user.id) else "",
+                is_public=user.is_public,
+                top_clusters=_top_clusters_for_visible_nodes(session, visible_nodes_for_owner(session, viewer_id, user.id, include_muted=True)),
+                relationship=get_relationship(session, viewer_id, user.id).model_dump(),
+            )
+        )
+        if len(results) >= 20:
+            break
+    return results
+
+
+def list_friendships(session: Session, viewer_id: str) -> FriendshipListsRead:
+    rows = session.scalars(
+        select(Friendship).where(
+            or_(Friendship.requester_id == viewer_id, Friendship.addressee_id == viewer_id)
+        )
+    ).all()
+    friends: list[FriendshipListItem] = []
+    incoming: list[FriendshipListItem] = []
+    outgoing: list[FriendshipListItem] = []
+    for row in rows:
+        other_id = row.addressee_id if row.requester_id == viewer_id else row.requester_id
+        other = ensure_user_exists(session, other_id)
+        item = FriendshipListItem(
+            id=other.id,
+            display_name=other.display_name,
+            bio=other.bio if can_view_profile(session, viewer_id, other.id) else "",
+            top_clusters=_top_clusters_for_visible_nodes(session, visible_nodes_for_owner(session, viewer_id, other.id, include_muted=True)),
+            friendship_state=friendship_state_for(session, viewer_id, other.id),
+            relationship=get_relationship(session, viewer_id, other.id),
+            updated_at=row.updated_at,
+        )
+        if row.status == "accepted":
+            friends.append(item)
+        elif row.status == "pending":
+            if row.addressee_id == viewer_id:
+                incoming.append(item)
+            else:
+                outgoing.append(item)
+    return FriendshipListsRead(
+        friends=friends,
+        incoming=incoming,
+        outgoing=outgoing,
+        suggestions=suggest_users(session, viewer_id),
+    )
+
+
+def suggest_users(session: Session, viewer_id: str, limit: int = 8) -> list[FriendshipListItem]:
+    own_nodes = visible_nodes_for_owner(session, viewer_id, viewer_id, include_muted=True)
+    own_topics = Counter(topic for node in own_nodes for topic in node.topics)
+    results: list[tuple[int, User]] = []
+    for user in session.scalars(select(User).where(User.id != viewer_id, User.is_public.is_(True))):
+        if blocked_between(session, viewer_id, user.id):
+            continue
+        relationship = get_relationship(session, viewer_id, user.id)
+        if relationship.friendship_state in {"accepted", "incoming", "outgoing"}:
+            continue
+        visible = visible_nodes_for_owner(session, viewer_id, user.id, include_muted=True)
+        if not visible:
+            continue
+        overlap = sum(1 for topic in {topic for node in visible for topic in node.topics} if own_topics.get(topic))
+        if overlap <= 0 and user.follower_count <= 0:
+            continue
+        results.append((overlap + min(user.follower_count, 5), user))
+    results.sort(key=lambda item: item[0], reverse=True)
+    suggestions: list[FriendshipListItem] = []
+    for _, user in results[:limit]:
+        suggestions.append(
+            FriendshipListItem(
+                id=user.id,
+                display_name=user.display_name,
+                bio=user.bio,
+                top_clusters=_top_clusters_for_visible_nodes(session, visible_nodes_for_owner(session, viewer_id, user.id, include_muted=True)),
+                friendship_state="suggested",
+                relationship=get_relationship(session, viewer_id, user.id),
+                updated_at=user.updated_at,
+            )
+        )
+    return suggestions
+
+
+def social_neighborhood(session: Session, viewer_id: str) -> SocialNeighborhoodResponse:
+    own_nodes = visible_nodes_for_owner(session, viewer_id, viewer_id, include_muted=True)
+    own_clusters = {node.cluster_id for node in own_nodes if node.cluster_id}
+    own_topics = {topic for node in own_nodes for topic in node.topics}
+    items: list[SocialNeighborhoodItem] = []
+    for user_id in get_visible_social_user_ids(session, viewer_id):
+        visible = visible_nodes_for_owner(session, viewer_id, user_id)
+        if not visible:
+            continue
+        cluster_labels = _top_clusters_for_visible_nodes(session, [node for node in visible if node.cluster_id in own_clusters])
+        shared_topics = sorted(own_topics.intersection({topic for node in visible for topic in node.topics}))[:3]
+        user = ensure_user_exists(session, user_id)
         items.append(
-            FollowListItem(
+            SocialNeighborhoodItem(
                 user_id=user.id,
                 display_name=user.display_name,
-                avatar_url=user.avatar_url,
-                top_clusters=cluster_map.get(user.id, [])[:3],
-                followed_at=follow.created_at,
-            )
-        )
-    return items
-
-
-def list_followers(session: Session, user_id: str) -> list[FollowListItem]:
-    follows = list(
-        session.scalars(
-            select(Follow).where(Follow.following_id == user_id).order_by(desc(Follow.created_at))
-        )
-    )
-    return _build_follow_list_items(session, follows, followers=True)
-
-
-def list_following(session: Session, user_id: str) -> list[FollowListItem]:
-    follows = list(
-        session.scalars(
-            select(Follow).where(Follow.follower_id == user_id).order_by(desc(Follow.created_at))
-        )
-    )
-    return _build_follow_list_items(session, follows, followers=False)
-
-
-def seed_social_demo(session: Session, current_user_id: str) -> dict[str, int]:
-    demo_users = [
-        {
-            "id": "maya-chen",
-            "display_name": "Maya Chen",
-            "bio": "Builds humane AI products and overthinks influence.",
-            "thoughts": [
-                "I keep wondering whether AI products should optimize for clarity instead of endless engagement.",
-                "Most product strategy mistakes are really just unspoken incentives becoming interface decisions.",
-                "I notice I trust systems more when they reveal uncertainty instead of hiding it.",
-            ],
-        },
-        {
-            "id": "leo-martin",
-            "display_name": "Leo Martin",
-            "bio": "Thinking in public about policy, economics, and information systems.",
-            "thoughts": [
-                "Politics has become a competition over attention architecture more than ideology.",
-                "People call it polarization, but a lot of it is repeated exposure to emotionally efficient narratives.",
-                "Economic anxiety keeps leaking into every conversation about technology.",
-            ],
-        },
-        {
-            "id": "sana-rivera",
-            "display_name": "Sana Rivera",
-            "bio": "Writes about health, discipline, and creative resilience.",
-            "thoughts": [
-                "Sleep is the first place my discipline collapses when ambition gets performative.",
-                "Creative work gets easier when I stop asking whether it will matter and just make the next honest thing.",
-                "Health routines are easier to keep when they become identity instead of chores.",
-            ],
-        },
-    ]
-
-    created_users = 0
-    created_thoughts = 0
-    for payload in demo_users:
-        user = session.get(User, payload["id"])
-        if not user:
-            user = User(
-                id=payload["id"],
-                display_name=payload["display_name"],
-                bio=payload["bio"],
-                is_public=True,
-                serendipity_enabled=True,
-            )
-            session.add(user)
-            created_users += 1
-            session.commit()
-
-        existing_thought = session.scalar(select(Thought).where(Thought.user_id == payload["id"]))
-        if existing_thought:
-            continue
-
-        for content in payload["thoughts"]:
-            vector, emotion, topics = analyze_thought_content(content)
-            session.add(
-                Thought(
-                    user_id=payload["id"],
-                    content=content,
-                    emotion=emotion,
-                    topics=topics,
-                    vector=vector,
-                    visibility="public",
-                    created_at=datetime.now(timezone.utc),
-                )
-            )
-            created_thoughts += 1
-        session.commit()
-        recompute_graph(session, payload["id"])
-
-    ensure_user_exists(session, current_user_id)
-    return {"users_created": created_users, "thoughts_created": created_thoughts}
-
-
-def _serialize_reply(session: Session, thought: Thought) -> SocialReplyRead:
-    author = ensure_user_exists(session, thought.user_id)
-    return SocialReplyRead(
-        id=thought.id,
-        content=thought.content,
-        created_at=thought.created_at,
-        emotion=thought.emotion,
-        topics=thought.topics,
-        author_id=author.id,
-        author_display_name=author.display_name,
-        visibility=thought.visibility,
-        reply_to_id=thought.reply_to_id,
-        reply_to_user_id=thought.reply_to_user_id,
-    )
-
-
-def get_reply_thread(session: Session, current_user_id: str, thought_id: str) -> ReplyThreadRead:
-    root = session.get(Thought, thought_id)
-    if not root:
-        raise HTTPException(status_code=404, detail="Thought not found")
-    if root.visibility == "private" and root.user_id != current_user_id:
-        raise HTTPException(status_code=404, detail="Thought not found")
-
-    replies = list(
-        session.scalars(select(Thought).where(Thought.reply_to_id == thought_id).order_by(Thought.created_at.asc()))
-    )
-    visible_replies = [reply for reply in replies if reply.visibility == "public" or reply.user_id == current_user_id]
-    return ReplyThreadRead(
-        root=_serialize_reply(session, root),
-        replies=[_serialize_reply(session, reply) for reply in visible_replies],
-    )
-
-
-def list_social_feed(session: Session, user_id: str, limit: int = 20) -> list[SocialFeedItem]:
-    following_ids = get_following_ids(session, user_id)
-    if not following_ids:
-        return []
-    thoughts = list(
-        session.scalars(
-            select(Thought)
-            .where(Thought.user_id.in_(following_ids), Thought.visibility == "public")
-            .order_by(desc(Thought.created_at))
-            .limit(limit)
-        )
-    )
-    return [
-        SocialFeedItem(
-            thought=_serialize_reply(session, thought),
-            relationship="reply" if thought.reply_to_user_id == user_id else "ambient",
-        )
-        for thought in thoughts
-    ]
-
-
-def get_trending_clusters(session: Session, limit: int = 10) -> list[TrendingClusterRead]:
-    public_user_ids = [user.id for user in session.scalars(select(User).where(User.is_public.is_(True)))]
-    if not public_user_ids:
-        return []
-
-    thoughts = list(
-        session.scalars(select(Thought).where(Thought.user_id.in_(public_user_ids), Thought.visibility == "public"))
-    )
-    if not thoughts:
-        return []
-
-    now = datetime.now(timezone.utc)
-    current_cutoff = now - timedelta(days=7)
-    previous_cutoff = now - timedelta(days=14)
-    labels_to_thoughts: dict[str, list[Thought]] = defaultdict(list)
-    for thought in thoughts:
-        label = " / ".join(topic.replace("_", " ").title() for topic in thought.topics[:2]) or "General Reflection"
-        labels_to_thoughts[label].append(thought)
-
-    rows: list[TrendingClusterRead] = []
-    for label, label_thoughts in labels_to_thoughts.items():
-        current_count = sum(ensure_utc(thought.created_at) >= current_cutoff for thought in label_thoughts)
-        previous_count = sum(
-            previous_cutoff <= ensure_utc(thought.created_at) < current_cutoff for thought in label_thoughts
-        )
-        growth_percentage = round(((current_count - previous_count) / max(previous_count, 1)) * 100, 2)
-        rows.append(
-            TrendingClusterRead(
-                label=label,
-                growth_percentage=growth_percentage,
-                user_count=len({thought.user_id for thought in label_thoughts}),
-                thought_count=len(label_thoughts),
-                sample_thoughts=[thought.content[:120] for thought in label_thoughts[:3]],
-            )
-        )
-    rows.sort(key=lambda item: (item.growth_percentage, item.user_count, item.thought_count), reverse=True)
-    return rows[:limit]
-
-
-def _top_topics_for_user(session: Session, user_id: str) -> list[str]:
-    thoughts = list(session.scalars(select(Thought).where(Thought.user_id == user_id, Thought.visibility == "public")))
-    counts = Counter(topic for thought in thoughts for topic in thought.topics)
-    return [topic.replace("_", " ").title() for topic, _ in counts.most_common(3)]
-
-
-def get_suggested_users(session: Session, user_id: str, limit: int = 10) -> list[FollowListItem]:
-    following_ids = set(get_following_ids(session, user_id))
-    own_thoughts = list(session.scalars(select(Thought).where(Thought.user_id == user_id)))
-    own_topics = Counter(topic for thought in own_thoughts for topic in thought.topics)
-    candidates = list(
-        session.scalars(select(User).where(User.id != user_id, User.is_public.is_(True)).order_by(User.follower_count.desc()))
-    )
-    scored: list[tuple[float, User]] = []
-    for candidate in candidates:
-        if candidate.id in following_ids:
-            continue
-        candidate_thoughts = list(
-            session.scalars(select(Thought).where(Thought.user_id == candidate.id, Thought.visibility == "public"))
-        )
-        if not candidate_thoughts:
-            continue
-        candidate_topics = Counter(topic for thought in candidate_thoughts for topic in thought.topics)
-        shared_topics = sum(min(own_topics[topic], candidate_topics[topic]) for topic in own_topics if topic in candidate_topics)
-        if own_thoughts:
-            shared_vector = 0.0
-            comparisons = 0
-            for own in own_thoughts[:10]:
-                best = max((cosine_similarity(own.vector, other.vector) for other in candidate_thoughts[:10]), default=0.0)
-                shared_vector += best
-                comparisons += 1
-            similarity = shared_vector / max(comparisons, 1)
-        else:
-            similarity = candidate.follower_count / 100.0
-        score = similarity + shared_topics * 0.05 + min(candidate.follower_count, 50) * 0.01
-        scored.append((score, candidate))
-
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return [
-        FollowListItem(
-            user_id=user.id,
-            display_name=user.display_name,
-            avatar_url=user.avatar_url,
-            top_clusters=_top_topics_for_user(session, user.id),
-            followed_at=user.created_at,
-        )
-        for _, user in scored[:limit]
-    ]
-
-
-def get_serendipity_matches(session: Session, user_id: str, limit: int = 3) -> SerendipityResponse:
-    user = ensure_user_exists(session, user_id)
-    latest = session.scalar(
-        select(Thought)
-        .where(Thought.user_id == user_id)
-        .order_by(desc(Thought.created_at))
-    )
-    latest_preview = latest.content[:140] if latest else None
-    if latest is None or not user.serendipity_enabled:
-        return SerendipityResponse(enabled=user.serendipity_enabled, latest_thought_preview=latest_preview, matches=[])
-
-    blocked_ids = {user_id, *get_following_ids(session, user_id), *get_followers_ids(session, user_id)}
-    candidate_thoughts = list(
-        session.scalars(
-            select(Thought)
-            .join(User, User.id == Thought.user_id)
-            .where(
-                Thought.visibility == "public",
-                User.is_public.is_(True),
-                User.serendipity_enabled.is_(True),
-            )
-            .order_by(desc(Thought.created_at))
-            .limit(240)
-        )
-    )
-
-    latest_topics = set(latest.topics)
-    seen_users: set[str] = set()
-    matches: list[tuple[float, Thought, list[str]]] = []
-    for thought in candidate_thoughts:
-        if thought.user_id in blocked_ids or thought.user_id in seen_users:
-            continue
-        similarity = cosine_similarity(latest.vector, thought.vector)
-        shared_topics = [
-            topic.replace("_", " ").title()
-            for topic in thought.topics
-            if topic in latest_topics
-        ][:3]
-        if similarity < 0.28 and not shared_topics:
-            continue
-        seen_users.add(thought.user_id)
-        matches.append((similarity, thought, shared_topics))
-
-    matches.sort(key=lambda item: (item[0], len(item[2]), item[1].created_at), reverse=True)
-    return SerendipityResponse(
-        enabled=True,
-        latest_thought_preview=latest_preview,
-        matches=[
-            SerendipityMatchRead(
-                id=thought.id,
-                alias=f"Stranger {index + 1}",
-                thought_preview=thought.content[:180],
+                relationship=get_relationship(session, viewer_id, user.id),
+                shared_cluster_labels=cluster_labels,
                 shared_topics=shared_topics,
-                similarity_score=min(100, max(0, int(round(similarity * 100)))),
-                created_at=thought.created_at,
+                visible_node_count=len(visible),
             )
-            for index, (similarity, thought, shared_topics) in enumerate(matches[:limit])
-        ],
+        )
+    return SocialNeighborhoodResponse(items=items)
+
+
+def _drop_social_links_between(session: Session, a: str, b: str) -> None:
+    session.execute(
+        delete(Follow).where(
+            or_(
+                (Follow.follower_id == a) & (Follow.following_id == b),
+                (Follow.follower_id == b) & (Follow.following_id == a),
+            )
+        )
     )
+    record = get_friendship_record(session, a, b)
+    if record is not None:
+        session.delete(record)
+
+
+def _top_clusters_for_visible_nodes(session: Session, nodes: list[ContentNode]) -> list[str]:
+    cluster_ids = [node.cluster_id for node in nodes if node.cluster_id]
+    if not cluster_ids:
+        return []
+    counts = Counter(cluster_ids)
+    labels = {
+        cluster.id: cluster.label
+        for cluster in session.scalars(select(NodeCluster).where(NodeCluster.id.in_(cluster_ids)))
+    }
+    return [labels[cluster_id] for cluster_id, _ in counts.most_common(3) if cluster_id in labels]

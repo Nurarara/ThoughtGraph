@@ -2,62 +2,91 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
-class GraphNode(BaseModel):
-    id: str
-    content: str
-    preview: str
-    created_at: datetime
-    emotion: str
-    topics: list[str]
-    cluster_id: str | None
-    cluster_label: str | None
-    color: str
-    size: float
-    connection_count: int
-    activity_score: int
-    author_id: str | None = None
-    author_display_name: str | None = None
-    visibility: str | None = None
-    is_social: bool = False
-
-
-class GraphEdge(BaseModel):
+class GraphEdgeRead(BaseModel):
     id: str
     source: str
     target: str
-    kind: str
+    edge_type: str
     weight: float
+    explanation: dict = Field(default_factory=dict)
 
 
-class GraphCluster(BaseModel):
+class GraphNodeRead(BaseModel):
+    id: str
+    kind: str
+    title: str | None
+    content_text: str
+    preview_text: str
+    visibility: str
+    created_at: datetime
+    updated_at: datetime
+    topics: list[str]
+    cluster_id: str | None
+    cluster_label: str | None
+    cluster_color: str | None
+    connection_count: int
+    x: float
+    y: float
+    author_id: str | None = None
+    author_display_name: str | None = None
+    relationship_to_viewer: str | None = None
+    is_social: bool = False
+    media_asset_id: str | None = None
+    media_kind: str | None = None
+    media_status: str | None = None
+    thumbnail_url: str | None = None
+    playback_url: str | None = None
+    duration_seconds: float | None = None
+    media_url: str | None = None
+    link_url: str | None = None
+    reply_to_node_id: str | None = None
+    quote_of_node_id: str | None = None
+
+
+class GraphClusterRead(BaseModel):
     id: str
     label: str
     color: str
-    percentage: float
-    thought_count: int
-    trend: str
-    dominant_themes: list[str]
-    emotion_distribution: dict[str, int]
+    summary: str
+    node_count: int
+    dominant_topics: list[str]
+    centroid_x: float
+    centroid_y: float
+    owner_user_id: str | None = None
+    is_social: bool = False
 
 
-class GraphAuthor(BaseModel):
-    user_id: str
-    display_name: str
-    avatar_url: str | None
-    color: str
+class GraphViewport(BaseModel):
+    center_x: float
+    center_y: float
+    zoom_hint: float
+
+
+class GraphExplanation(BaseModel):
+    reason: str
+    generated_at: datetime
 
 
 class GraphResponse(BaseModel):
-    nodes: list[GraphNode]
-    edges: list[GraphEdge]
-    clusters: list[GraphCluster]
-    mood: str
-    first_thought_at: datetime | None
-    last_thought_at: datetime | None
-    social_enabled: bool = False
-    social_nodes: list[GraphNode] = []
-    social_edges: list[GraphEdge] = []
-    social_profiles: list[GraphAuthor] = []
+    nodes: list[GraphNodeRead]
+    edges: list[GraphEdgeRead]
+    clusters: list[GraphClusterRead]
+    viewport: GraphViewport
+    explanation: GraphExplanation
+    social_mode: bool = False
+
+
+class GraphSearchItem(BaseModel):
+    node_id: str
+    title: str | None
+    preview_text: str
+    cluster_label: str | None
+    cluster_color: str | None
+    score: float
+
+
+class GraphSearchResponse(BaseModel):
+    items: list[GraphSearchItem]

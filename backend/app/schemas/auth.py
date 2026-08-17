@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator
 
-
-def _normalize_email(value: str) -> str:
-    cleaned = value.strip().lower()
-    if "@" not in cleaned or "." not in cleaned.split("@", 1)[-1] or " " in cleaned or len(cleaned) > 320:
-        raise ValueError("invalid email")
-    return cleaned
+from app.services.auth_service import normalize_email
 
 
 class MagicLinkRequest(BaseModel):
@@ -16,7 +11,7 @@ class MagicLinkRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def _validate_email(cls, value: str) -> str:
-        return _normalize_email(value)
+        return normalize_email(value)
 
 
 class MagicLinkResponse(BaseModel):

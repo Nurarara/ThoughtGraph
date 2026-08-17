@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.schemas.auth import (
     LogoutResponse,
@@ -11,6 +15,7 @@ from app.schemas.auth import (
     VerifyRequest,
     VerifyResponse,
 )
+from app.services.email_service import email_provider_configured, send_magic_link_email
 from app.services.auth_service import (
     issue_magic_link,
     revoke_session,
@@ -35,14 +40,28 @@ def request_link(
     request: Request,
     session: Session = Depends(get_db),
 ) -> MagicLinkResponse:
+    settings = get_settings()
+    if settings.auth_mode == "production" and not email_provider_configured(settings):
+        raise HTTPException(status_code=503, detail="email delivery is not configured")
     issued = issue_magic_link(session, payload.email)
     base = str(request.base_url).rstrip("/")
     link = f"{base}/api/auth/verify?token={issued.token}"
+    if email_provider_configured(settings):
+        try:
+            send_magic_link_email(payload.email, link)
+        except Exception as err:
+            raise HTTPException(status_code=502, detail="failed to send sign-in email") from err
     return MagicLinkResponse(
         email=payload.email,
-        magic_link=link,
+        magic_link=link if settings.auth_mode != "production" else None,
         expires_in_seconds=issued.expires_in_seconds,
     )
+
+
+@router.get("/verify")
+def verify_link_redirect(token: str) -> RedirectResponse:
+    target = f"{get_settings().app_url.rstrip('/')}/?token={quote(token)}"
+    return RedirectResponse(url=target, status_code=307)
 
 
 @router.post("/verify", response_model=VerifyResponse)

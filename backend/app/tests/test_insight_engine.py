@@ -1,40 +1,48 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from app.models.thought import Thought
-from app.services.insight_engine import generate_echo_chamber, generate_emotional_pattern, generate_focus_shift
+from fastapi.testclient import TestClient
+import pytest
+
+from app import db as db_package
+from app.db.session import set_database_url
+from app.main import create_app
+from app.models.domain_event import DomainEvent
+from app.models.workflow_job import WorkflowJob
 
 
-def build_thought(cluster_id: str, emotion: str, days_ago: int, hour: int = 12) -> Thought:
-    return Thought(
-        user_id="local-user",
-        content="test",
-        emotion=emotion,
-        topics=["career"],
-        vector=[0.1, 0.2],
-        cluster_id=cluster_id,
-        created_at=(datetime.now(timezone.utc) - timedelta(days=days_ago)).replace(hour=hour),
+@pytest.fixture
+def client(tmp_path: Path) -> TestClient:
+    database_path = tmp_path / "events.db"
+    set_database_url(f"sqlite:///{database_path}")
+    app = create_app()
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_node_creation_emits_events_and_completes_graph_job(client: TestClient) -> None:
+    response = client.post(
+        "/api/nodes",
+        json={
+            "kind": "thought",
+            "title": "Event-first architecture",
+            "content_text": "Every expensive action should cross a durable workflow boundary.",
+            "visibility": "private",
+        },
     )
+    assert response.status_code == 200
 
+    with db_package.session.SessionLocal() as session:
+        event_types = {
+            event.event_type
+            for event in session.query(DomainEvent).all()
+        }
+        assert "node_created" in event_types
+        assert "node_embedded" in event_types
+        assert "graph_job_enqueued" in event_types
+        assert "graph_projection_refreshed" in event_types
 
-def test_generate_focus_shift_detects_delta() -> None:
-    thoughts = [build_thought("career", "growth", 2) for _ in range(7)] + [build_thought("health", "neutral", 20) for _ in range(3)]
-    result = generate_focus_shift(thoughts, {"career": "Career", "health": "Health"}, datetime.now(timezone.utc))
-    assert result is not None
-    assert "career" in result[0].lower()
-
-
-def test_generate_emotional_pattern_detects_late_night_negativity() -> None:
-    thoughts = [build_thought("career", "fear", 1, hour=23) for _ in range(4)] + [build_thought("career", "sadness", 3, hour=1)]
-    result = generate_emotional_pattern(thoughts)
-    assert result is not None
-    assert "late night" in result[0]
-
-
-def test_generate_echo_chamber_flags_low_diversity() -> None:
-    thoughts = [build_thought("ai", "growth", 3) for _ in range(9)] + [build_thought("health", "neutral", 10)]
-    result = generate_echo_chamber(thoughts, {"ai": "AI", "health": "Health"}, datetime.now(timezone.utc))
-    assert result is not None
-    assert "narrowing" in result[0].lower()
-
+        jobs = session.query(WorkflowJob).all()
+        assert jobs
+        assert jobs[0].status == "completed"
