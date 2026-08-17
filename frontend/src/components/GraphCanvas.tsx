@@ -18,11 +18,11 @@ interface ScreenPoint {
   y: number;
 }
 
-const BG = "#0f1116";
-const EDGE = "rgba(210, 220, 255, 0.1)";
-const EDGE_ACTIVE = "rgba(220, 235, 255, 0.24)";
-const TEXT = "rgba(246, 248, 255, 0.92)";
-const MUTED = "rgba(246, 248, 255, 0.56)";
+const BG = "#020a11";
+const EDGE = "rgba(63, 198, 220, 0.13)";
+const EDGE_ACTIVE = "rgba(244, 174, 66, 0.72)";
+const TEXT = "rgba(242, 247, 246, 0.96)";
+const MUTED = "rgba(196, 218, 225, 0.66)";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -48,17 +48,17 @@ function fromScreen(point: ScreenPoint, viewport: GraphViewport, width: number, 
 
 function nodeRadius(node: GraphNodeRecord, isActive: boolean, zoom: number) {
   const base =
-    node.kind === "image" ? 11 : node.kind === "video" ? 12 : node.kind === "link" ? 9 : 8;
-  const connected = clamp(node.connection_count / 2, 0, 8);
-  const zoomBoost = clamp((zoom - 0.7) * 1.8, 0, 4);
-  return isActive ? base + 6 + connected * 0.4 + zoomBoost : base + connected * 0.25;
+    node.kind === "image" ? 12 : node.kind === "video" ? 13 : node.kind === "link" ? 10 : 9;
+  const connected = clamp(Math.sqrt(Math.max(0, node.connection_count)) * 1.8, 0, 8);
+  const zoomBoost = clamp((zoom - 0.7) * 1.5, 0, 4);
+  return isActive ? base + 5 + connected * 0.7 + zoomBoost : base + connected * 0.52;
 }
 
 function strokeFor(edge: GraphEdgeRecord, active: boolean) {
   if (active) {
     return EDGE_ACTIVE;
   }
-  return edge.weight > 0.75 ? "rgba(150, 190, 255, 0.2)" : EDGE;
+  return edge.weight > 0.75 ? "rgba(63, 198, 220, 0.3)" : EDGE;
 }
 
 export function GraphCanvas({
@@ -72,6 +72,8 @@ export function GraphCanvas({
 }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const inertiaFrameRef = useRef<number | null>(null);
+  const viewportRef = useRef(viewport);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0, dpr: 1 });
   const pointerState = useRef<{
@@ -80,11 +82,22 @@ export function GraphCanvas({
     startY: number;
     lastX: number;
     lastY: number;
+    lastMoveAt: number;
+    velocityX: number;
+    velocityY: number;
     downNodeId: string | null;
     dragging: boolean;
   } | null>(null);
 
   const nodesById = useMemo(() => new Map(graph?.nodes.map((node) => [node.id, node]) ?? []), [graph]);
+
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
+
+  useEffect(() => () => {
+    if (inertiaFrameRef.current !== null) window.cancelAnimationFrame(inertiaFrameRef.current);
+  }, []);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -137,34 +150,83 @@ export function GraphCanvas({
     const activeNodeId = focusedNodeId ?? selectedNodeId ?? hoveredNodeId;
     const activeNode = activeNodeId ? nodesById.get(activeNodeId) ?? null : null;
     const activeNodePosition = activeNode ? toScreen(activeNode, viewport, size.width, size.height) : null;
+    const activeNeighborIds = new Set(
+      activeNodeId
+        ? graph.edges
+            .filter((edge) => edge.source === activeNodeId || edge.target === activeNodeId)
+            .sort((left, right) => right.weight - left.weight)
+            .slice(0, size.width < 700 ? 0 : 2)
+            .map((edge) => edge.source === activeNodeId ? edge.target : edge.source)
+        : [],
+    );
     const zoom = viewport.zoom_hint;
 
     const gradient = ctx.createRadialGradient(
-      size.width * 0.5,
-      size.height * 0.45,
+      size.width * 0.58,
+      size.height * 0.48,
       24,
-      size.width * 0.5,
-      size.height * 0.5,
+      size.width * 0.58,
+      size.height * 0.48,
       Math.max(size.width, size.height) * 0.7,
     );
-    gradient.addColorStop(0, "#171c27");
+    gradient.addColorStop(0, "#071a24");
     gradient.addColorStop(1, BG);
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, size.width, size.height);
 
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
+    ctx.strokeStyle = "rgba(118, 189, 202, 0.035)";
     ctx.lineWidth = 1;
-    for (let x = 0; x <= size.width; x += 64) {
+    for (let x = 0; x <= size.width; x += 80) {
       ctx.beginPath();
       ctx.moveTo(x + 0.5, 0);
       ctx.lineTo(x + 0.5, size.height);
       ctx.stroke();
     }
-    for (let y = 0; y <= size.height; y += 64) {
+    for (let y = 0; y <= size.height; y += 80) {
       ctx.beginPath();
       ctx.moveTo(0, y + 0.5);
       ctx.lineTo(size.width, y + 0.5);
       ctx.stroke();
+    }
+
+    const clusterGroups = new Map<string, GraphNodeRecord[]>();
+    for (const node of graph.nodes) {
+      const key = node.cluster_label ?? "unknown";
+      const bucket = clusterGroups.get(key) ?? [];
+      bucket.push(node);
+      clusterGroups.set(key, bucket);
+    }
+    const representativeNodeIds = new Set(
+      [...clusterGroups.values()].flatMap((items) =>
+        [...items]
+          .sort((left, right) => right.connection_count - left.connection_count || left.id.localeCompare(right.id))
+          .slice(0, 2)
+          .map((node) => node.id),
+      ),
+    );
+
+    const clusterLabelPoints = new Map<string, { x: number; y: number }>();
+    for (const [label, items] of clusterGroups) {
+      if (items.length < 2) continue;
+      const points = items.map((node) => toScreen(node, viewport, size.width, size.height));
+      const centroid = points.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 });
+      centroid.x /= points.length;
+      centroid.y /= points.length;
+      const fieldRadius = Math.max(42, ...points.map((point) => Math.hypot(point.x - centroid.x, point.y - centroid.y))) + 28;
+      clusterLabelPoints.set(label, {
+        x: centroid.x,
+        y: centroid.y - fieldRadius * 0.72 - 14,
+      });
+      ctx.save();
+      ctx.strokeStyle = items[0].cluster_color ?? "#3fc6dc";
+      ctx.globalAlpha = 0.11;
+      ctx.lineWidth = 1;
+      for (const scale of [0.62, 0.82, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(centroid.x, centroid.y, fieldRadius * scale, fieldRadius * 0.72 * scale, -0.12, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     for (const edge of graph.edges) {
@@ -200,39 +262,18 @@ export function GraphCanvas({
       ctx.stroke();
     }
 
-    const clusterTitles = new Map<string, GraphNodeRecord[]>();
-    for (const node of graph.nodes) {
-      const bucket = clusterTitles.get(node.cluster_label ?? "unknown") ?? [];
-      bucket.push(node);
-      clusterTitles.set(node.cluster_label ?? "unknown", bucket);
-    }
-
-    for (const [label, items] of clusterTitles) {
+    for (const [label, items] of clusterGroups) {
       if (items.length < 2) {
         continue;
       }
-      const centroid = items.reduce(
-        (acc, node) => {
-          acc.x += node.x;
-          acc.y += node.y;
-          return acc;
-        },
-        { x: 0, y: 0 },
-      );
-      const point = toScreen(
-        {
-          ...items[0],
-          x: centroid.x / items.length,
-          y: centroid.y / items.length,
-        },
-        viewport,
-        size.width,
-        size.height,
-      );
-      ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
-      ctx.font = "600 10px Inter, system-ui, sans-serif";
+      const point = clusterLabelPoints.get(label);
+      if (!point) continue;
+      ctx.fillStyle = items[0].cluster_color ?? "rgba(63, 198, 220, 0.8)";
+      ctx.globalAlpha = 0.78;
+      ctx.font = "500 11px 'IBM Plex Mono', monospace";
       ctx.textAlign = "center";
-      ctx.fillText(label.toUpperCase(), point.x, point.y - 18);
+      ctx.fillText(label.toUpperCase(), point.x, point.y);
+      ctx.globalAlpha = 1;
     }
 
     for (const node of graph.nodes) {
@@ -264,17 +305,27 @@ export function GraphCanvas({
               : "rgba(255, 255, 255, 0.03)";
       ctx.fill();
 
+      const nodeFill = ctx.createRadialGradient(
+        point.x - radius * 0.3,
+        point.y - radius * 0.32,
+        Math.max(1, radius * 0.08),
+        point.x,
+        point.y,
+        radius,
+      );
+      nodeFill.addColorStop(0, fill);
+      nodeFill.addColorStop(0.48, fill);
+      nodeFill.addColorStop(1, "rgba(2, 10, 17, 0.96)");
       ctx.beginPath();
       ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = fill;
+      ctx.fillStyle = nodeFill;
       ctx.globalAlpha = alpha;
       ctx.fill();
       ctx.globalAlpha = 1;
-
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, Math.max(2, radius - 4), 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(10, 12, 18, 0.9)";
-      ctx.fill();
+      ctx.strokeStyle = fill;
+      ctx.globalAlpha = isActive ? 0.92 : 0.6;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
 
       if (node.kind === "video") {
         ctx.beginPath();
@@ -301,38 +352,53 @@ export function GraphCanvas({
         ctx.fill();
       }
 
-      if (isActive || zoom > 1.15) {
-        const label = nodeDisplayLabel(node);
-        ctx.font = isActive ? "600 13px Inter, system-ui, sans-serif" : "500 11px Inter, system-ui, sans-serif";
+      const showLabel = isActive
+        || (size.width >= 700 && (activeNodeId ? activeNeighborIds.has(node.id) : representativeNodeIds.has(node.id)))
+        || (size.width >= 700 && zoom > 2.4);
+      if (showLabel) {
+        const persistentFocus = isSelected || isFocused;
+        const label = persistentFocus ? "FOCUSED NODE" : nodeDisplayLabel(node, isActive ? 30 : 22);
+        ctx.font = persistentFocus
+          ? "500 10px 'IBM Plex Mono', monospace"
+          : isActive
+            ? "600 13px 'IBM Plex Sans', sans-serif"
+            : "500 11px 'IBM Plex Sans', sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
-        const textWidth = Math.min(280, ctx.measureText(label).width + 24);
         const x = point.x + radius + 10;
         const y = point.y - 1;
-        ctx.fillStyle = isActive ? TEXT : MUTED;
+        ctx.shadowColor = "rgba(2, 10, 17, 0.96)";
+        ctx.shadowBlur = 7;
+        ctx.fillStyle = persistentFocus ? "rgba(244, 174, 66, 0.94)" : isActive ? TEXT : MUTED;
         ctx.fillText(label, x, y);
-        if (node.author_display_name) {
-          ctx.font = "500 9px Inter, system-ui, sans-serif";
-          ctx.fillStyle = node.is_social ? "rgba(125, 255, 227, 0.82)" : "rgba(246, 248, 255, 0.6)";
+        if (node.author_display_name && isActive) {
+          ctx.font = "400 9px 'IBM Plex Mono', monospace";
+          ctx.fillStyle = node.is_social ? "rgba(63, 198, 220, 0.84)" : "rgba(196, 218, 225, 0.62)";
           ctx.fillText(`@${node.author_display_name}`, x, y + 12);
         }
-        if (isActive && node.preview_text) {
-          ctx.font = "400 10px Inter, system-ui, sans-serif";
-          ctx.fillStyle = "rgba(246, 248, 255, 0.7)";
-          const preview = node.preview_text.slice(0, 80);
-          ctx.fillText(preview, x, y + 24);
-        }
-        ctx.strokeStyle = node.is_social ? "rgba(125, 255, 227, 0.16)" : "rgba(255, 255, 255, 0.08)";
-        ctx.strokeRect(x - 8, y - 16, textWidth, isActive ? 48 : 28);
+        ctx.shadowBlur = 0;
       }
     }
 
     if (activeNodePosition && activeNode) {
-      ctx.strokeStyle = activeNode.cluster_color ?? "rgba(255, 255, 255, 0.35)";
+      ctx.strokeStyle = "rgba(63, 198, 220, 0.86)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(activeNodePosition.x, activeNodePosition.y, nodeRadius(activeNode, true, zoom) + 14, 0, Math.PI * 2);
+      const focusRadius = nodeRadius(activeNode, true, zoom) + 20;
+      ctx.arc(activeNodePosition.x, activeNodePosition.y, focusRadius, 0, Math.PI * 2);
       ctx.stroke();
+      for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+        ctx.beginPath();
+        ctx.moveTo(
+          activeNodePosition.x + Math.cos(angle) * (focusRadius + 6),
+          activeNodePosition.y + Math.sin(angle) * (focusRadius + 6),
+        );
+        ctx.lineTo(
+          activeNodePosition.x + Math.cos(angle) * (focusRadius + 22),
+          activeNodePosition.y + Math.sin(angle) * (focusRadius + 22),
+        );
+        ctx.stroke();
+      }
     }
   }, [focusedNodeId, graph, hoveredNodeId, nodesById, selectedNodeId, size, viewport]);
 
@@ -361,11 +427,48 @@ export function GraphCanvas({
     return nearest;
   };
 
+  const stopInertia = () => {
+    if (inertiaFrameRef.current !== null) {
+      window.cancelAnimationFrame(inertiaFrameRef.current);
+      inertiaFrameRef.current = null;
+    }
+  };
+
+  const startInertia = (initialVelocityX: number, initialVelocityY: number) => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    stopInertia();
+    let velocityX = initialVelocityX;
+    let velocityY = initialVelocityY;
+    let lastTime = performance.now();
+    const step = (time: number) => {
+      const elapsed = Math.min(32, Math.max(1, time - lastTime));
+      lastTime = time;
+      const current = viewportRef.current;
+      const next = {
+        ...current,
+        center_x: current.center_x - (velocityX * elapsed) / current.zoom_hint,
+        center_y: current.center_y - (velocityY * elapsed) / current.zoom_hint,
+      };
+      viewportRef.current = next;
+      onViewportChange(next);
+      const friction = Math.pow(0.88, elapsed / 16.67);
+      velocityX *= friction;
+      velocityY *= friction;
+      if (Math.hypot(velocityX, velocityY) < 0.008) {
+        inertiaFrameRef.current = null;
+        return;
+      }
+      inertiaFrameRef.current = window.requestAnimationFrame(step);
+    };
+    inertiaFrameRef.current = window.requestAnimationFrame(step);
+  };
+
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas || !graph) {
       return;
     }
+    stopInertia();
     canvas.setPointerCapture(event.pointerId);
     const rect = canvas.getBoundingClientRect();
     const localX = event.clientX - rect.left;
@@ -377,6 +480,9 @@ export function GraphCanvas({
       startY: localY,
       lastX: localX,
       lastY: localY,
+      lastMoveAt: performance.now(),
+      velocityX: 0,
+      velocityY: 0,
       downNodeId: hit?.id ?? null,
       dragging: false,
     };
@@ -398,6 +504,11 @@ export function GraphCanvas({
 
     if (moved > 5) {
       active.dragging = true;
+      const now = performance.now();
+      const elapsed = Math.max(1, now - active.lastMoveAt);
+      active.velocityX = active.velocityX * 0.58 + (deltaX / elapsed) * 0.42;
+      active.velocityY = active.velocityY * 0.58 + (deltaY / elapsed) * 0.42;
+      active.lastMoveAt = now;
       onViewportChange({
         ...viewport,
         center_x: viewport.center_x - deltaX / viewport.zoom_hint,
@@ -437,6 +548,7 @@ export function GraphCanvas({
       }
     }
 
+    if (active.dragging) startInertia(active.velocityX, active.velocityY);
     pointerState.current = null;
   };
 
@@ -448,6 +560,7 @@ export function GraphCanvas({
     if (!graph || size.width === 0 || size.height === 0) {
       return;
     }
+    stopInertia();
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     const cursor = {

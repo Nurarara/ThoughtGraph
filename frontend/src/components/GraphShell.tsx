@@ -6,8 +6,23 @@ import {
   useRef,
   useState,
 } from "react";
+import { ArrowRightIcon } from "@phosphor-icons/react/ArrowRight";
+import { CompassIcon } from "@phosphor-icons/react/Compass";
+import { DotsThreeIcon } from "@phosphor-icons/react/DotsThree";
+import { MagnifyingGlassIcon } from "@phosphor-icons/react/MagnifyingGlass";
+import { PaperPlaneTiltIcon } from "@phosphor-icons/react/PaperPlaneTilt";
+import { PlanetIcon } from "@phosphor-icons/react/Planet";
+import { PlayIcon } from "@phosphor-icons/react/Play";
+import { PlusIcon } from "@phosphor-icons/react/Plus";
+import { QuotesIcon } from "@phosphor-icons/react/Quotes";
+import { SignOutIcon } from "@phosphor-icons/react/SignOut";
+import { SparkleIcon } from "@phosphor-icons/react/Sparkle";
+import { UserCircleIcon } from "@phosphor-icons/react/UserCircle";
+import { UsersThreeIcon } from "@phosphor-icons/react/UsersThree";
+import { XIcon } from "@phosphor-icons/react/X";
 
 import { GraphCanvas } from "./GraphCanvas";
+import { LandingOrbitField } from "./landing/LandingOrbitField";
 import { LaterPhaseCommandCenter } from "./phase/LaterPhaseSurfaces";
 import {
   clearSession,
@@ -112,11 +127,11 @@ function visibilityOptions() {
 
 function focusViewportFor(node: GraphNodeRecord, viewport: GraphViewport): GraphViewport {
   const zoom =
-    node.kind === "image" ? 1.55 : node.kind === "video" ? 1.5 : node.kind === "link" ? 1.45 : 1.75;
+    node.kind === "image" ? 1.22 : node.kind === "video" ? 1.2 : node.kind === "link" ? 1.16 : 1.26;
   return {
     center_x: node.x,
     center_y: node.y,
-    zoom_hint: zoom,
+    zoom_hint: Math.max(Math.min(viewport.zoom_hint, 1.35), zoom),
   };
 }
 
@@ -729,6 +744,8 @@ function AuthLanding({
   const [stage, setStage] = useState<"request" | "verify" | "sent">("request");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [authExpanded, setAuthExpanded] = useState(Boolean(notice));
+  const [showExplainer, setShowExplainer] = useState(false);
   const verifiedUrlTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -737,6 +754,7 @@ function AuthLanding({
     if (verifiedUrlTokenRef.current === tokenFromUrl) return;
     verifiedUrlTokenRef.current = tokenFromUrl;
 
+    setAuthExpanded(true);
     setStage("verify");
     setToken(tokenFromUrl);
     setBusy(true);
@@ -754,6 +772,19 @@ function AuthLanding({
       })
       .finally(() => setBusy(false));
   }, [onAuthenticated]);
+
+  useEffect(() => {
+    if (notice) setAuthExpanded(true);
+  }, [notice]);
+
+  useEffect(() => {
+    if (!authExpanded) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) setAuthExpanded(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [authExpanded, busy]);
 
   const requestLink = async (event: FormEvent) => {
     event.preventDefault();
@@ -793,94 +824,140 @@ function AuthLanding({
   };
 
   return (
-    <div className="auth-shell">
-      <div className="auth-visual">
-        <div className="auth-brand">ThoughtGraph</div>
-        <h1>Think in nodes, not feeds.</h1>
-        <p>
-          A spatial workspace for linked thoughts, people, and context. The shell stays graph-native while the
-          social layer stays opt-in.
-        </p>
-        <div className="auth-kicker">Phase 4 graph + media interface</div>
+    <div className="auth-shell observatory-landing">
+      <LandingOrbitField />
+      <header className="landing-header">
+        <div className="landing-brand"><PlanetIcon size={18} weight="fill" aria-hidden="true" />ThoughtGraph</div>
+        <div className="landing-calibration">private by design&nbsp;&nbsp;/&nbsp;&nbsp;evidence over opinion</div>
+      </header>
+
+      <main className="landing-hero">
+        <div className="landing-eyebrow">Private spatial intelligence</div>
+        <h1><span>See what your</span><span>thinking is becoming.</span></h1>
+        <p>Capture ideas. Watch relationships surface. Reflect with evidence—not guesses.</p>
+        <div className="landing-actions">
+          <button className="landing-primary" type="button" onClick={() => setAuthExpanded(true)}>
+            Enter your graph <ArrowRightIcon size={20} weight="bold" aria-hidden="true" />
+          </button>
+          <button
+            className="landing-secondary"
+            type="button"
+            aria-expanded={showExplainer}
+            onClick={() => setShowExplainer((visible) => !visible)}
+          >
+            <PlayIcon size={16} weight="fill" aria-hidden="true" />
+            {showExplainer ? "Hide the model" : "See how it works"}
+          </button>
+        </div>
+      </main>
+
+      <div className="landing-trust" aria-label="ThoughtGraph principles">
+        <span>Private by design</span>
+        <span>Your thoughts stay yours</span>
+        <span>Evidence over opinion</span>
       </div>
-      <section className="auth-card">
-        <div className="drawer-label">auth</div>
-        <h2>{stage === "request" ? "request a link" : "verify token"}</h2>
-        <p className="drawer-copy">
-          {stage === "request"
-            ? "Use your email to get a one-time link."
-            : stage === "verify"
-              ? "Paste the token from the link to enter the graph."
-              : "Check your email and open the sign-in link to continue."}
-        </p>
-        {notice ? <div className="drawer-empty">{notice}</div> : null}
-        {stage === "request" ? (
-          <form className="auth-form" onSubmit={requestLink}>
-            <input
-              autoFocus
-              className="auth-input"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(event) => setEmail(event.currentTarget.value)}
-              required
-            />
-            <button className="auth-submit" type="submit" disabled={busy}>
-              {busy ? "sending..." : "send link"}
-            </button>
-          </form>
-        ) : stage === "verify" ? (
-          <form className="auth-form" onSubmit={verify}>
-            {magicLink ? (
-              <a className="auth-link" href={magicLink} target="_blank" rel="noreferrer">
-                {magicLink}
-              </a>
-            ) : null}
-            <input
-              autoFocus
-              className="auth-input"
-              type="text"
-              placeholder="token"
-              value={token}
-              onChange={(event) => setToken(event.currentTarget.value)}
-              required
-            />
-            <button className="auth-submit" type="submit" disabled={busy}>
-              {busy ? "verifying..." : "verify"}
-            </button>
-            <button
-              className="auth-secondary"
-              type="button"
-              onClick={() => {
-                setStage("request");
-                setToken("");
-                setMagicLink(null);
-              }}
-            >
-              use a different email
-            </button>
-          </form>
-        ) : (
-          <div className="auth-form">
-            <div className="drawer-empty">
-              A real sign-in link was sent to <strong>{email}</strong>. Open it from your inbox and the app
-              will finish sign-in automatically.
+
+      {showExplainer ? (
+        <section className="landing-explainer" aria-label="How ThoughtGraph works">
+          <div><span>01</span><strong>Capture</strong><p>Save the thought before it disappears.</p></div>
+          <div><span>02</span><strong>Connect</strong><p>Related ideas move into view as the graph grows.</p></div>
+          <div><span>03</span><strong>Reflect</strong><p>See change through traceable evidence, never personality guesses.</p></div>
+        </section>
+      ) : null}
+
+      {authExpanded ? (
+        <>
+        <div className="auth-panel-backdrop" aria-hidden="true" onClick={() => { if (!busy) setAuthExpanded(false); }} />
+        <section className="auth-card observatory-auth-panel" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+          <div className="auth-panel-head">
+            <div>
+              <div className="drawer-label">Secure entry</div>
+              <h2 id="auth-title">
+                {stage === "request" ? "Enter your graph" : stage === "verify" ? "Your private link is ready" : "Check your inbox"}
+              </h2>
             </div>
-            <button
-              className="auth-secondary"
-              type="button"
-              onClick={() => {
-                setStage("request");
-                setToken("");
-                setMagicLink(null);
-              }}
-            >
-              use a different email
+            <button className="instrument-icon-button" type="button" aria-label="Close sign in" disabled={busy} onClick={() => setAuthExpanded(false)}>
+              <XIcon size={18} aria-hidden="true" />
             </button>
           </div>
-        )}
-        {error ? <div className="auth-error">{error}</div> : null}
-      </section>
+          <p className="drawer-copy">
+            {stage === "request"
+              ? "We will send a single-use link. No password, no public profile by default."
+              : stage === "verify"
+                ? "Open the secure link, or verify the prepared token here."
+                : "Open the link in your email. ThoughtGraph will finish sign-in automatically."}
+          </p>
+          {notice ? <div className="drawer-empty" role="status">{notice}</div> : null}
+          {stage === "request" ? (
+            <form className="auth-form" onSubmit={requestLink}>
+              <label className="auth-field">
+                <span>Email address</span>
+                <input
+                  autoFocus
+                  className="auth-input"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(event) => setEmail(event.currentTarget.value)}
+                  required
+                />
+              </label>
+              <button className="auth-submit" type="submit" disabled={busy}>
+                <PaperPlaneTiltIcon size={18} aria-hidden="true" />
+                {busy ? "Sending secure link…" : "Send secure link"}
+              </button>
+            </form>
+          ) : stage === "verify" ? (
+            <form className="auth-form" onSubmit={verify}>
+              {magicLink ? (
+                <a className="auth-link" href={magicLink} target="_blank" rel="noreferrer">
+                  Open secure sign-in link <ArrowRightIcon size={16} aria-hidden="true" />
+                </a>
+              ) : null}
+              <label className="auth-field">
+                <span>One-time token</span>
+                <input
+                  autoFocus
+                  className="auth-input"
+                  type="text"
+                  autoComplete="one-time-code"
+                  placeholder="Paste token"
+                  value={token}
+                  onChange={(event) => setToken(event.currentTarget.value)}
+                  required
+                />
+              </label>
+              <button className="auth-submit" type="submit" disabled={busy}>
+                {busy ? "Verifying…" : "Enter ThoughtGraph"} <ArrowRightIcon size={18} aria-hidden="true" />
+              </button>
+              <button className="auth-secondary" type="button" onClick={() => {
+                setStage("request");
+                setToken("");
+                setMagicLink(null);
+              }}>
+                Use a different email
+              </button>
+            </form>
+          ) : (
+            <div className="auth-form">
+              <div className="drawer-empty" role="status">
+                A sign-in link was sent to <strong>{email}</strong>.
+              </div>
+              <button className="auth-secondary" type="button" onClick={() => {
+                setStage("request");
+                setToken("");
+                setMagicLink(null);
+              }}>
+                Use a different email
+              </button>
+            </div>
+          )}
+          {error ? <div className="auth-error" role="alert">{error}</div> : null}
+        </section>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -921,28 +998,35 @@ function GraphHeader({
   trail: GraphNodeRecord[];
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const runMenuAction = (action: () => void) => {
     setMobileMenuOpen(false);
+    setMoreMenuOpen(false);
     action();
   };
 
   useEffect(() => {
-    if (!mobileMenuOpen) return;
+    if (!mobileMenuOpen && !moreMenuOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileMenuOpen(false);
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+        setMoreMenuOpen(false);
+      }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [mobileMenuOpen]);
+  }, [mobileMenuOpen, moreMenuOpen]);
 
   return (
     <header className={`graph-header ${mobileMenuOpen ? "menu-open" : ""}`}>
       <div className="graph-brand">
-        <div className="drawer-label">ThoughtGraph</div>
-        <div className="graph-brand-title">Spatial graph workspace</div>
-        <div className="graph-brand-sub">
-          {graph?.explanation.reason ?? "Graph-native view"} {syncing ? " - syncing" : ""}
+        <div className="graph-brand-mark"><PlanetIcon size={16} weight="fill" aria-hidden="true" />ThoughtGraph</div>
+        <div className="graph-location">
+          <button type="button" onClick={onReturnToSelf}>Personal graph</button>
+          <span aria-hidden="true">/</span>
+          <span>{trail.length ? nodeDisplayLabel(trail[trail.length - 1], 32) : "All thoughts"}</span>
         </div>
+        <div className={`graph-sync-state ${syncing ? "is-syncing" : ""}`}>{syncing ? "recalibrating" : `${graph?.nodes.length ?? 0} nodes in field`}</div>
       </div>
       <button
         className="mobile-nav-toggle"
@@ -952,38 +1036,47 @@ function GraphHeader({
         aria-controls="graph-primary-actions"
         onClick={() => setMobileMenuOpen((open) => !open)}
       >
-        {mobileMenuOpen ? "close" : "menu"}
+        {mobileMenuOpen ? <XIcon size={20} aria-hidden="true" /> : <DotsThreeIcon size={22} weight="bold" aria-hidden="true" />}
       </button>
       <div className="graph-trail">
-        {trail.slice(-4).map((node) => (
+        {trail.slice(-3).map((node) => (
           <NodeChip key={node.id} node={node} onFocus={onJumpToNode} />
         ))}
       </div>
       <div className="graph-actions" id="graph-primary-actions">
-        <button className={`topbar-button ${socialMode ? "primary" : ""}`} onClick={() => runMenuAction(onToggleSocialMode)} type="button">
-          social
+        <button className="topbar-button" onClick={() => runMenuAction(onOpenSearch)} type="button">
+          <MagnifyingGlassIcon size={18} aria-hidden="true" /> <span>Search</span>
         </button>
         <button className="topbar-button" onClick={() => runMenuAction(onOpenDiscovery)} type="button">
-          discover
+          <CompassIcon size={18} aria-hidden="true" /> <span>Explore</span>
         </button>
-        <button className="topbar-button" onClick={() => runMenuAction(onOpenSystems)} type="button">
-          systems
+        <button className="topbar-button capture" onClick={() => runMenuAction(onOpenComposer)} type="button">
+          <PlusIcon size={18} weight="bold" aria-hidden="true" /> <span>Capture</span>
         </button>
-        <button className="topbar-button" onClick={() => runMenuAction(onOpenPeople)} type="button">
-          people
+        <button className="topbar-button account" aria-label="Open profile" onClick={() => runMenuAction(onOpenProfile)} type="button">
+          <UserCircleIcon size={22} aria-hidden="true" /><span>{initials(me?.display_name ?? session.display_name)}</span>
         </button>
-        <button className="topbar-button" onClick={() => runMenuAction(onOpenSearch)} type="button">
-          search
-        </button>
-        <button className="topbar-button primary" aria-label="Create node" onClick={() => runMenuAction(onOpenComposer)} type="button">
-          +
-        </button>
-        <button className="topbar-button" aria-label="Open profile" onClick={() => runMenuAction(onOpenProfile)} type="button">
-          {initials(me?.display_name ?? session.display_name)}
-        </button>
-        <button className="topbar-button muted" onClick={() => runMenuAction(onLogout)} type="button">
-          out
-        </button>
+        <div className="graph-more-wrap">
+          <button className="topbar-button more" type="button" aria-label="More workspace actions" aria-expanded={moreMenuOpen} onClick={() => setMoreMenuOpen((open) => !open)}>
+            <DotsThreeIcon size={22} weight="bold" aria-hidden="true" />
+          </button>
+          {moreMenuOpen ? (
+            <div className="graph-more-menu">
+              <button type="button" onClick={() => runMenuAction(onToggleSocialMode)}>
+                <SparkleIcon size={17} aria-hidden="true" /><span>{socialMode ? "Leave social field" : "Enter social field"}</span>
+              </button>
+              <button type="button" onClick={() => runMenuAction(onOpenPeople)}>
+                <UsersThreeIcon size={17} aria-hidden="true" /><span>People</span>
+              </button>
+              <button type="button" onClick={() => runMenuAction(onOpenSystems)}>
+                <PlanetIcon size={17} aria-hidden="true" /><span>Systems & reflections</span>
+              </button>
+              <button type="button" onClick={() => runMenuAction(onLogout)}>
+                <SignOutIcon size={17} aria-hidden="true" /><span>Sign out</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </header>
   );
@@ -1624,13 +1717,13 @@ function NodeDetailPanel({
     <aside className="detail-panel">
       <div className="detail-head">
         <div>
-          <div className="drawer-label">focus trail</div>
-          <h2>{nodeDisplayLabel(node, 80)}</h2>
+          <div className="detail-classification"><SparkleIcon size={14} weight="fill" aria-hidden="true" />Focused node</div>
+          <h2>{nodeDisplayLabel(node, 54)}</h2>
         </div>
         <div className="detail-head-actions">
           <span className="detail-kind">{node.kind}</span>
           <button className="drawer-close detail-close" type="button" aria-label="Close node detail" onClick={onClose}>
-            close
+            <XIcon size={18} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -1645,10 +1738,10 @@ function NodeDetailPanel({
       </div>
       <div className="detail-actions">
         <button className="drawer-action" type="button" onClick={onComposeReply}>
-          reply
+          <PaperPlaneTiltIcon size={17} aria-hidden="true" />Reply
         </button>
         <button className="drawer-action" type="button" onClick={onComposeQuote}>
-          quote
+          <QuotesIcon size={17} aria-hidden="true" />Quote
         </button>
         {node.author_id ? (
           <button
@@ -2457,15 +2550,7 @@ export function GraphShell() {
           focusedNodeId={focusedNodeId}
           onViewportChange={setViewport}
           onNodeSelect={(nodeId) => setSelectedNodeId(nodeId)}
-          onNodeFocus={(nodeId) => {
-            setFocusedNodeId(nodeId);
-            if (nodeId) {
-              const node = graph?.nodes.find((item) => item.id === nodeId);
-              if (node) {
-                setViewport(focusViewportFor(node, viewport));
-              }
-            }
-          }}
+          onNodeFocus={setFocusedNodeId}
         />
         <MiniMap graph={graph} viewport={viewport} onJump={setViewport} />
         <OnboardingPrompt me={me} onComplete={markOnboardingComplete} />

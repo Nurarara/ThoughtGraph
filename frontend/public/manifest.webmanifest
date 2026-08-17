@@ -1,9 +1,17 @@
 {
   "name": "ThoughtGraph",
   "short_name": "ThoughtGraph",
-  "description": "Topic-centric thought mapping with social overlap, snapshots, and weekly reports.",
+  "description": "A private spatial environment for connected thinking and evidence-backed reflection.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f3ef",
-  "theme_color": "#f5f3ef"
+  "background_color": "#020a11",
+  "theme_color": "#020a11",
+  "icons": [
+    {
+      "src": "/thoughtgraph-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
 }
