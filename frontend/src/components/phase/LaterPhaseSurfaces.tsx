@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { AttentionDriftPanel } from "./AttentionDriftPanel";
+import { ReflectiveInsightsPanel } from "./ReflectiveInsightsPanel";
 
 import "../../phase.css";
 
@@ -229,8 +229,8 @@ export function GraphReadModelInspector() {
 
 export function ReflectiveInsights({ onFocusNode }: { onFocusNode: (nodeId: string) => void }) {
   return (
-    <PhaseShell eyebrow="Phase 10 / Reflection" title="Attention drift">
-      <AttentionDriftPanel onFocusNode={onFocusNode} />
+    <PhaseShell eyebrow="Phase 10 / Reflection" title="Reflective insights">
+      <ReflectiveInsightsPanel onFocusNode={onFocusNode} />
     </PhaseShell>
   );
 }

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_id
@@ -15,8 +17,8 @@ from app.schemas.reflective_insight import (
 from app.services.reflective_insight_service import (
     enqueue_reflective_insight_loop,
     generate_reflective_insight_loop,
-    list_persisted_attention_drift_insights,
-    update_attention_drift_feedback,
+    list_persisted_reflective_insights,
+    update_reflective_insight_feedback,
 )
 
 router = APIRouter(prefix="/reflective-insights")
@@ -25,11 +27,13 @@ router = APIRouter(prefix="/reflective-insights")
 @router.get("", response_model=list[PersistedReflectiveInsightRead])
 def list_reflective_insights_route(
     include_dismissed: bool = False,
+    kind: Literal["attention_drift", "source_shaping_summary"] | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
     session: Session = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ) -> list[PersistedReflectiveInsightRead]:
-    return list_persisted_attention_drift_insights(
-        session, current_user_id, include_dismissed=include_dismissed
+    return list_persisted_reflective_insights(
+        session, current_user_id, include_dismissed=include_dismissed, kind=kind, limit=limit
     )
 
 
@@ -40,7 +44,7 @@ def update_reflective_insight_feedback_route(
     session: Session = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ) -> PersistedReflectiveInsightRead:
-    result = update_attention_drift_feedback(session, current_user_id, insight_id, payload)
+    result = update_reflective_insight_feedback(session, current_user_id, insight_id, payload)
     if result is None:
         raise HTTPException(status_code=404, detail="reflective insight not found")
     return result

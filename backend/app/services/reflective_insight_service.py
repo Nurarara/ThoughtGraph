@@ -5,7 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from math import log2
 from urllib.parse import urlparse
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.content_node import ContentNode
@@ -32,8 +32,14 @@ REFLECTIVE_JOB_TYPE = "reflective_insight_loop"
 REFLECTIVE_INSIGHT_PREFIX = "reflective_"
 ATTENTION_DRIFT_CONTRACT_VERSION = 1
 ATTENTION_DRIFT_MINIMUM_SAMPLE = 4
+SOURCE_SHAPING_CONTRACT_VERSION = 1
+SOURCE_SHAPING_MINIMUM_SAMPLE = 4
 NON_CLINICAL_LIMITATION = (
     "Based only on nodes saved in these time windows; this is not a clinical or psychological assessment."
+)
+SOURCE_SHAPING_LIMITATION = (
+    "Based only on input types and links saved in these windows; it is incomplete, does not establish influence, "
+    "and is not a clinical or psychological assessment."
 )
 
 
@@ -229,7 +235,10 @@ def _attention_drift_card(
     previous = _theme_distribution(previous_nodes, clusters)
     labels = set(current) | set(previous)
     drift_score = round(sum(abs(current.get(label, 0.0) - previous.get(label, 0.0)) for label in labels) / 2, 3)
-    rising_label = max(labels, key=lambda label: current.get(label, 0.0) - previous.get(label, 0.0), default="general reflection")
+    rising_label = next(
+        iter(sorted(labels, key=lambda label: (-(current.get(label, 0.0) - previous.get(label, 0.0)), label))),
+        "general reflection",
+    )
     rising_delta = round(current.get(rising_label, 0.0) - previous.get(rising_label, 0.0), 3)
     if current_nodes and rising_delta > 0.1:
         summary = f"Your saved nodes show more attention toward {rising_label}, up {int(rising_delta * 100)} percentage points from the comparison window."
@@ -387,15 +396,16 @@ def _source_shaping_card(
     kind_counts = Counter(node.kind for node in current_nodes)
     previous_kind_counts = Counter(node.kind for node in previous_nodes)
     domain_counts = Counter(_host(node.link_url) for node in current_nodes if node.link_url)
+    previous_domain_counts = Counter(_host(node.link_url) for node in previous_nodes if node.link_url)
     total = max(len(current_nodes), 1)
     dominant_kind, dominant_count = kind_counts.most_common(1)[0] if kind_counts else ("none", 0)
     dominant_share = dominant_count / total
     top_domain = domain_counts.most_common(1)[0][0] if domain_counts else None
     severity = "warning" if len(current_nodes) >= 4 and dominant_share >= 0.75 else "info"
     if top_domain:
-        summary = f"Sources are being shaped by {dominant_kind} nodes and repeated links from {top_domain}."
+        summary = f"Among your saved inputs this week, {dominant_kind} nodes are most common and {top_domain} is the most repeated linked domain."
     elif current_nodes:
-        summary = f"Sources are mostly {dominant_kind} nodes this week ({int(dominant_share * 100)}% of visible inputs)."
+        summary = f"Among your saved inputs this week, {dominant_kind} nodes are most common ({int(dominant_share * 100)}%)."
     else:
         summary = "No new source mix is visible this week."
     evidence = []
@@ -424,6 +434,9 @@ def _source_shaping_card(
             "kind_counts": dict(kind_counts),
             "previous_kind_counts": dict(previous_kind_counts),
             "domain_counts": dict(domain_counts),
+            "previous_domain_counts": dict(previous_domain_counts),
+            "current_node_count": len(current_nodes),
+            "previous_node_count": len(previous_nodes),
             "dominant_kind": dominant_kind,
             "dominant_share": round(dominant_share, 3),
         },
@@ -480,9 +493,14 @@ def _persist_insights(
     for card in insights:
         kind = f"{REFLECTIVE_INSIGHT_PREFIX}{card.kind}"
         stable_key = None
-        if card.kind == "attention_drift":
+        if card.kind in {"attention_drift", "source_shaping_summary"}:
+            contract_version = (
+                ATTENTION_DRIFT_CONTRACT_VERSION
+                if card.kind == "attention_drift"
+                else SOURCE_SHAPING_CONTRACT_VERSION
+            )
             stable_key = (
-                f"{user_id}:{card.kind}:{window_end.date().isoformat()}:v{ATTENTION_DRIFT_CONTRACT_VERSION}"
+                f"{user_id}:{card.kind}:{window_end.date().isoformat()}:v{contract_version}"
             )
         existing = session.scalar(
             select(Insight).where(
@@ -498,12 +516,10 @@ def _persist_insights(
             )
         )
         if existing:
-            if card.kind == "attention_drift":
+            if stable_key:
                 existing.content = card.summary
                 existing.raw_content = f"{card.title}: {card.summary}"
-                existing.supporting_data = _attention_drift_contract(
-                    card, comparison_start, window_start, window_end
-                )
+                existing.supporting_data = _stable_reflective_contract(card, comparison_start, window_start, window_end)
                 session.add(existing)
             persisted_ids.append(existing.id)
             continue
@@ -513,8 +529,8 @@ def _persist_insights(
             content=card.summary,
             raw_content=f"{card.title}: {card.summary}",
             stable_key=stable_key,
-            supporting_data=_attention_drift_contract(card, comparison_start, window_start, window_end)
-            if card.kind == "attention_drift" else {
+            supporting_data=_stable_reflective_contract(card, comparison_start, window_start, window_end)
+            if stable_key else {
                 "report_id": report_id,
                 "window_start": window_start.isoformat(),
                 "window_end": window_end.isoformat(),
@@ -529,6 +545,19 @@ def _persist_insights(
     return persisted_ids
 
 
+def _stable_reflective_contract(
+    card: ReflectiveInsightRead,
+    comparison_start: datetime,
+    window_start: datetime,
+    window_end: datetime,
+) -> dict:
+    if card.kind == "attention_drift":
+        return _attention_drift_contract(card, comparison_start, window_start, window_end)
+    if card.kind == "source_shaping_summary":
+        return _source_shaping_contract(card, comparison_start, window_start, window_end)
+    raise ValueError(f"unsupported stable reflective contract: {card.kind}")
+
+
 def _attention_drift_contract(
     card: ReflectiveInsightRead,
     comparison_start: datetime,
@@ -538,7 +567,7 @@ def _attention_drift_contract(
     current_nodes = int(card.metrics.get("current_node_count", 0))
     previous_nodes = int(card.metrics.get("previous_node_count", 0))
     sample_size = current_nodes + previous_nodes
-    ready = current_nodes > 0 and previous_nodes > 0 and sample_size >= ATTENTION_DRIFT_MINIMUM_SAMPLE
+    ready = current_nodes >= 2 and previous_nodes >= 2 and sample_size >= ATTENTION_DRIFT_MINIMUM_SAMPLE
     confidence_score = _confidence(sample_size, target=10) if ready else 0.0
     confidence_label = "high" if confidence_score >= 0.8 else "medium" if confidence_score >= 0.5 else "low"
     current_share = float(card.metrics.get("current_rising_share", 0.0))
@@ -570,24 +599,102 @@ def _attention_drift_contract(
     }
 
 
-def list_persisted_attention_drift_insights(
+def _source_shaping_contract(
+    card: ReflectiveInsightRead,
+    comparison_start: datetime,
+    window_start: datetime,
+    window_end: datetime,
+) -> dict:
+    current_count = int(card.metrics.get("current_node_count", 0))
+    previous_count = int(card.metrics.get("previous_node_count", 0))
+    sample_size = current_count + previous_count
+    ready = current_count >= 2 and previous_count >= 2 and sample_size >= SOURCE_SHAPING_MINIMUM_SAMPLE
+    confidence_score = _confidence(sample_size, target=10) if ready else 0.0
+    confidence_label = "high" if confidence_score >= 0.8 else "medium" if confidence_score >= 0.5 else "low"
+    kind_counts = card.metrics.get("kind_counts", {})
+    previous_kind_counts = card.metrics.get("previous_kind_counts", {})
+    dominant_kind = str(card.metrics.get("dominant_kind", "thought"))
+    current_kind_share = float(kind_counts.get(dominant_kind, 0)) / current_count if current_count else 0.0
+    previous_kind_share = float(previous_kind_counts.get(dominant_kind, 0)) / previous_count if previous_count else 0.0
+    domains = card.metrics.get("domain_counts", {})
+    previous_domains = card.metrics.get("previous_domain_counts", {})
+    top_domain = max(domains, key=domains.get, default=None)
+    current_link_count = sum(int(value) for value in domains.values())
+    previous_link_count = sum(int(value) for value in previous_domains.values())
+    current_domain_count = int(domains.get(top_domain, 0)) if top_domain else 0
+    previous_domain_count = int(previous_domains.get(top_domain, 0)) if top_domain else 0
+    metrics = [{
+        "key": "dominant_input_kind_share", "label": f"Share of {dominant_kind} inputs",
+        "current": round(current_kind_share, 3), "previous": round(previous_kind_share, 3),
+        "delta": round(current_kind_share - previous_kind_share, 3), "unit": "proportion",
+        "method": "Count saved nodes by input kind in each 7-day window, then divide by all saved nodes in that window.",
+    }]
+    if top_domain:
+        current_domain_share = current_domain_count / current_link_count if current_link_count else 0.0
+        previous_domain_share = previous_domain_count / previous_link_count if previous_link_count else 0.0
+        metrics.extend([
+            {
+                "key": "top_source_domain_share", "label": f"Share of linked inputs from {top_domain}",
+                "current": round(current_domain_share, 3), "previous": round(previous_domain_share, 3),
+                "delta": round(current_domain_share - previous_domain_share, 3), "unit": "proportion",
+                "method": "Count saved link nodes by hostname in each window, divided by all link nodes in that window.",
+            },
+            {
+                "key": "top_source_domain_count", "label": f"Saved links from {top_domain}",
+                "current": float(current_domain_count), "previous": float(previous_domain_count),
+                "delta": float(current_domain_count - previous_domain_count), "unit": "nodes",
+                "method": "Count saved link nodes whose normalized hostname matches the current window's top domain.",
+            },
+        ])
+    return {
+        "contract_version": SOURCE_SHAPING_CONTRACT_VERSION,
+        "title": card.title,
+        "summary": card.summary if ready else "There is not enough saved activity in both windows to compare input patterns yet.",
+        "generated_at": window_end.isoformat(),
+        "status": "ready" if ready else "insufficient_data",
+        "window": {
+            "current_start": window_start.isoformat(), "current_end": window_end.isoformat(),
+            "comparison_start": comparison_start.isoformat(), "comparison_end": window_start.isoformat(),
+        },
+        "metrics": metrics,
+        "evidence": [item.model_dump(mode="json") for item in card.evidence] if ready else [],
+        "confidence": {
+            "score": confidence_score, "label": confidence_label,
+            "basis": "Evidence sufficiency from saved-node counts in both windows; not completeness or proof of influence.",
+            "sample_size": sample_size, "minimum_sample_size": SOURCE_SHAPING_MINIMUM_SAMPLE,
+        },
+        "limitations": [SOURCE_SHAPING_LIMITATION],
+        "action_hint": card.action_hint if ready else "Save inputs over time before comparing source patterns.",
+    }
+
+
+def list_persisted_reflective_insights(
     session: Session,
     user_id: str,
     *,
     include_dismissed: bool = False,
+    kind: str | None = None,
+    limit: int = 50,
 ) -> list[PersistedReflectiveInsightRead]:
     statement = select(Insight).where(
         Insight.user_id == user_id,
-        Insight.kind == f"{REFLECTIVE_INSIGHT_PREFIX}attention_drift",
+        Insight.kind.in_((
+            f"{REFLECTIVE_INSIGHT_PREFIX}attention_drift",
+            f"{REFLECTIVE_INSIGHT_PREFIX}source_shaping_summary",
+        )),
         Insight.stable_key.is_not(None),
+        _current_stable_contract_predicate(),
     )
     if not include_dismissed:
         statement = statement.where(Insight.dismissed.is_(False))
-    models = session.scalars(statement.order_by(Insight.created_at.desc())).all()
-    return [_persisted_attention_drift_read(model) for model in models]
+    if kind:
+        statement = statement.where(Insight.kind == f"{REFLECTIVE_INSIGHT_PREFIX}{kind}")
+    generated_at = Insight.supporting_data["generated_at"].as_string()
+    models = session.scalars(statement.order_by(generated_at.desc(), Insight.id.desc()).limit(limit)).all()
+    return [_persisted_reflective_insight_read(model) for model in models]
 
 
-def update_attention_drift_feedback(
+def update_reflective_insight_feedback(
     session: Session,
     user_id: str,
     insight_id: str,
@@ -597,8 +704,12 @@ def update_attention_drift_feedback(
         select(Insight).where(
             Insight.id == insight_id,
             Insight.user_id == user_id,
-            Insight.kind == f"{REFLECTIVE_INSIGHT_PREFIX}attention_drift",
+            Insight.kind.in_((
+                f"{REFLECTIVE_INSIGHT_PREFIX}attention_drift",
+                f"{REFLECTIVE_INSIGHT_PREFIX}source_shaping_summary",
+            )),
             Insight.stable_key.is_not(None),
+            _current_stable_contract_predicate(),
         )
     )
     if model is None:
@@ -629,14 +740,27 @@ def update_attention_drift_feedback(
     )
     session.commit()
     session.refresh(model)
-    return _persisted_attention_drift_read(model)
+    return _persisted_reflective_insight_read(model)
 
 
-def _persisted_attention_drift_read(model: Insight) -> PersistedReflectiveInsightRead:
+def _current_stable_contract_predicate():
+    return or_(
+        and_(
+            Insight.kind == f"{REFLECTIVE_INSIGHT_PREFIX}attention_drift",
+            Insight.supporting_data["contract_version"].as_integer() == ATTENTION_DRIFT_CONTRACT_VERSION,
+        ),
+        and_(
+            Insight.kind == f"{REFLECTIVE_INSIGHT_PREFIX}source_shaping_summary",
+            Insight.supporting_data["contract_version"].as_integer() == SOURCE_SHAPING_CONTRACT_VERSION,
+        ),
+    )
+
+
+def _persisted_reflective_insight_read(model: Insight) -> PersistedReflectiveInsightRead:
     contract = dict(model.supporting_data or {})
     return PersistedReflectiveInsightRead(
         id=model.id,
-        kind="attention_drift",
+        kind=model.kind.removeprefix(REFLECTIVE_INSIGHT_PREFIX),
         **contract,
         feedback={
             "dismissed": model.dismissed,
@@ -645,6 +769,10 @@ def _persisted_attention_drift_read(model: Insight) -> PersistedReflectiveInsigh
             "updated_at": model.feedback_updated_at,
         },
     )
+
+
+# Compatibility alias for early backend callers of the first vertical slice.
+list_persisted_attention_drift_insights = list_persisted_reflective_insights
 
 
 def _load_nodes(

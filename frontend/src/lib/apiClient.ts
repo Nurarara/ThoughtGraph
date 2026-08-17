@@ -760,7 +760,7 @@ export interface ReflectiveFeedbackRead {
 
 export interface PersistedReflectiveInsightRead {
   id: string;
-  kind: "attention_drift";
+  kind: "attention_drift" | "source_shaping_summary";
   contract_version: number;
   title: string;
   summary: string;

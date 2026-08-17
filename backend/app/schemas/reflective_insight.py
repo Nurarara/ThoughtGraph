@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 ReflectiveInsightKind = Literal[
@@ -103,10 +103,16 @@ class ReflectiveFeedbackUpdate(BaseModel):
     correction: Literal["inaccurate", "wrong_evidence", "not_useful"] | None = None
     annotation: str | None = Field(default=None, max_length=1000)
 
+    @model_validator(mode="after")
+    def require_at_least_one_change(self):
+        if not self.model_fields_set:
+            raise ValueError("at least one feedback field is required")
+        return self
+
 
 class PersistedReflectiveInsightRead(BaseModel):
     id: str
-    kind: Literal["attention_drift"]
+    kind: Literal["attention_drift", "source_shaping_summary"]
     contract_version: int
     title: str
     summary: str
