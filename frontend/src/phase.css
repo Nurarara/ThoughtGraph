@@ -1,0 +1,509 @@
+.phase-command-center {
+  min-height: 100vh;
+  padding: 32px;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(125, 255, 227, 0.12), transparent 28%),
+    radial-gradient(circle at 80% 16%, rgba(148, 182, 255, 0.16), transparent 24%),
+    linear-gradient(145deg, rgba(15, 17, 22, 0.96), rgba(12, 15, 21, 0.98));
+  color: var(--text, #f5f7fb);
+}
+
+.phase-hero {
+  max-width: 980px;
+  margin-bottom: 24px;
+  padding: 28px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-lg, 28px);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
+    rgba(18, 22, 31, 0.74);
+  box-shadow: var(--shadow, 0 30px 80px rgba(0, 0, 0, 0.42));
+  backdrop-filter: blur(20px);
+}
+
+.phase-hero h1,
+.phase-panel h2 {
+  margin: 0;
+  letter-spacing: -0.04em;
+}
+
+.phase-hero h1 {
+  max-width: 720px;
+  font-size: clamp(2rem, 5vw, 4.8rem);
+  line-height: 0.92;
+}
+
+.phase-hero p:last-child {
+  max-width: 720px;
+  color: var(--text-soft, rgba(245, 247, 251, 0.72));
+  line-height: 1.6;
+}
+
+.phase-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.phase-panel {
+  position: relative;
+  overflow: hidden;
+  min-height: 280px;
+  padding: 22px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-lg, 28px);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025)),
+    rgba(18, 22, 31, 0.82);
+  box-shadow: var(--shadow, 0 30px 80px rgba(0, 0, 0, 0.42));
+  backdrop-filter: blur(18px);
+}
+
+.phase-panel::before {
+  position: absolute;
+  inset: -120px auto auto -120px;
+  width: 260px;
+  height: 260px;
+  border-radius: 999px;
+  background: rgba(125, 255, 227, 0.08);
+  content: "";
+  pointer-events: none;
+}
+
+.phase-panel__header,
+.phase-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.phase-panel__header {
+  position: relative;
+  margin-bottom: 18px;
+}
+
+.phase-panel h2 {
+  font-size: clamp(1.25rem, 2vw, 1.8rem);
+}
+
+.phase-eyebrow {
+  margin: 0 0 8px;
+  color: var(--text-muted, rgba(245, 247, 251, 0.5));
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.phase-metric-grid,
+.phase-scale-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.phase-metric,
+.phase-readmodel,
+.phase-provenance-step,
+.phase-node-card,
+.phase-insight,
+.phase-control,
+.phase-scale-card,
+.phase-trust-score {
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.phase-metric {
+  padding: 16px;
+}
+
+.phase-metric span,
+.phase-control span,
+.phase-node-card span,
+.phase-trust-score span {
+  display: block;
+  color: var(--text-muted, rgba(245, 247, 251, 0.5));
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.phase-metric strong {
+  display: block;
+  margin: 8px 0 4px;
+  font-size: 1.8rem;
+  letter-spacing: -0.04em;
+}
+
+.phase-metric small,
+.phase-readmodel small,
+.phase-provenance-step small,
+.phase-scale-card small {
+  color: var(--text-soft, rgba(245, 247, 251, 0.72));
+}
+
+.phase-event-rail,
+.phase-readmodels,
+.phase-provenance,
+.phase-insights,
+.phase-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.phase-event-rail {
+  margin-top: 16px;
+}
+
+.phase-event {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 0;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+}
+
+.phase-event p,
+.phase-readmodel p,
+.phase-provenance-step p,
+.phase-insight p,
+.phase-control p,
+.phase-scale-card p {
+  margin: 4px 0 0;
+  color: var(--text-soft, rgba(245, 247, 251, 0.72));
+  line-height: 1.45;
+}
+
+.phase-event time {
+  color: var(--text-muted, rgba(245, 247, 251, 0.5));
+  font-size: 0.78rem;
+}
+
+.phase-pulse {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 999px;
+  box-shadow: 0 0 22px currentColor;
+}
+
+.phase-readmodel,
+.phase-insight,
+.phase-scale-card {
+  padding: 16px;
+}
+
+.phase-status {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.phase-progress {
+  height: 8px;
+  margin: 14px 0 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.phase-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent, #94b6ff), var(--accent-2, #7dffe3));
+}
+
+.phase-trust-score {
+  margin-bottom: 12px;
+  padding: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(125, 255, 227, 0.16), transparent 38%),
+    rgba(255, 255, 255, 0.045);
+}
+
+.phase-trust-score strong {
+  display: block;
+  margin: 8px 0;
+  font-size: 4rem;
+  line-height: 0.9;
+}
+
+.phase-provenance-step {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+}
+
+.phase-provenance-step > span {
+  color: var(--accent-2, #7dffe3);
+  font-weight: 800;
+}
+
+.phase-node-map {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.phase-node-card {
+  position: relative;
+  padding: 16px;
+  transform: translateY(calc(var(--phase-index) * 10px));
+}
+
+.phase-node-card::after {
+  position: absolute;
+  top: 28px;
+  right: -18px;
+  width: 28px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(125, 255, 227, 0.45), transparent);
+  content: "";
+}
+
+.phase-node-card:last-child::after {
+  display: none;
+}
+
+.phase-node-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.phase-node-card div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  padding-top: 8px;
+}
+
+.phase-node-card dt {
+  color: var(--text-muted, rgba(245, 247, 251, 0.5));
+}
+
+.phase-node-card dd {
+  margin: 0;
+  color: var(--text-soft, rgba(245, 247, 251, 0.72));
+  text-align: right;
+}
+
+.phase-insight button,
+.phase-control button {
+  margin-top: 14px;
+  border: 1px solid var(--line-strong, rgba(255, 255, 255, 0.14));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text, #f5f7fb);
+  padding: 9px 12px;
+}
+
+.attention-drift-panel,
+.attention-insight,
+.attention-feedback,
+.attention-limitations,
+.attention-evidence,
+.attention-confidence {
+  display: grid;
+  gap: 12px;
+}
+
+.attention-toolbar,
+.attention-feedback-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.attention-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft, rgba(245, 247, 251, 0.72));
+}
+
+.attention-toolbar button,
+.attention-feedback button,
+.attention-evidence button {
+  min-height: 42px;
+  border: 1px solid var(--line-strong, rgba(255, 255, 255, 0.14));
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text, #f5f7fb);
+  padding: 9px 12px;
+}
+
+.attention-state,
+.attention-sparse,
+.attention-confidence,
+.attention-limitations,
+.attention-action {
+  padding: 12px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 14px;
+  color: var(--text-soft, rgba(245, 247, 251, 0.72));
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.attention-insight.is-dismissed {
+  opacity: 0.72;
+}
+
+.attention-insight .phase-row > div,
+.attention-evidence button,
+.attention-evidence-static {
+  display: grid;
+  gap: 5px;
+  text-align: left;
+}
+
+.attention-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.attention-metric {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 14px;
+  color: var(--text-soft, rgba(245, 247, 251, 0.72));
+}
+
+.attention-metric strong,
+.attention-confidence strong,
+.attention-limitations strong,
+.attention-evidence > strong {
+  color: var(--text, #f5f7fb);
+}
+
+.attention-limitations ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.attention-feedback label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-soft, rgba(245, 247, 251, 0.72));
+}
+
+.attention-feedback select,
+.attention-feedback textarea {
+  width: 100%;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text, #f5f7fb);
+  padding: 10px;
+}
+
+.attention-feedback [role="alert"] {
+  color: #ff9a9a;
+}
+
+.phase-control {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+}
+
+.phase-control__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 92px;
+}
+
+.phase-control__actions button {
+  margin: 0;
+}
+
+.phase-tone-good {
+  color: var(--accent-2, #7dffe3);
+}
+
+.phase-tone-watch {
+  color: var(--accent-3, #ffb36b);
+}
+
+.phase-tone-danger {
+  color: #ff7b9c;
+}
+
+.phase-tone-neutral {
+  color: var(--accent, #94b6ff);
+}
+
+.phase-metric.phase-tone-good,
+.phase-control.phase-tone-good,
+.phase-scale-card.phase-tone-good {
+  border-color: rgba(125, 255, 227, 0.28);
+}
+
+.phase-metric.phase-tone-watch,
+.phase-control.phase-tone-watch,
+.phase-scale-card.phase-tone-watch {
+  border-color: rgba(255, 179, 107, 0.32);
+}
+
+.phase-metric.phase-tone-danger,
+.phase-control.phase-tone-danger,
+.phase-scale-card.phase-tone-danger {
+  border-color: rgba(255, 123, 156, 0.36);
+}
+
+@media (max-width: 980px) {
+  .phase-command-center {
+    padding: 18px;
+  }
+
+  .phase-dashboard-grid,
+  .phase-node-map {
+    grid-template-columns: 1fr;
+  }
+
+  .phase-node-card {
+    transform: none;
+  }
+
+  .phase-node-card::after {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .phase-metric-grid,
+  .phase-scale-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .phase-control,
+  .phase-row {
+    flex-direction: column;
+  }
+
+  .phase-control__actions {
+    flex-direction: row;
+  }
+
+  .attention-metrics {
+    grid-template-columns: 1fr;
+  }
+}
