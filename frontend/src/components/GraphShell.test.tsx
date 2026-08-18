@@ -4,20 +4,19 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { graphApi, type SessionPayload } from "../lib/apiClient";
-import { AuthLanding } from "./GraphShell";
+import { graphApi } from "../lib/apiClient";
+import { DEMO_SESSION } from "../lib/demoWorkspace";
+import { AuthLanding, GraphShell } from "./GraphShell";
 
 vi.mock("./landing/LandingOrbitField", () => ({
   LandingOrbitField: () => <div data-testid="landing-field" />,
 }));
 
-const guestSession: SessionPayload = {
-  session_token: "guest-session-token",
-  user_id: "guest-1234567890abcdef",
-  display_name: "Guest Explorer",
-  email: "",
-  is_new_user: true,
-};
+vi.mock("./GraphCanvas", () => ({
+  GraphCanvas: ({ graph }: { graph: { nodes: unknown[] } | null }) => (
+    <div data-testid="graph-canvas">{graph?.nodes.length ?? 0} demo nodes</div>
+  ),
+}));
 
 afterEach(() => {
   cleanup();
@@ -25,9 +24,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("AuthLanding guest entry", () => {
-  it("enters the workspace with an isolated guest session", async () => {
-    vi.spyOn(graphApi, "enterAsGuest").mockResolvedValue(guestSession);
+describe("AuthLanding demo entry", () => {
+  it("enters the browser-local workspace without contacting the backend", async () => {
     const authenticated = vi.fn();
     const enterWorkspace = vi.fn();
 
@@ -39,43 +37,33 @@ describe("AuthLanding guest entry", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Enter the field/i }));
-    await waitFor(() => expect(graphApi.enterAsGuest).toHaveBeenCalledTimes(1));
-    expect(authenticated).toHaveBeenCalledWith(guestSession);
-    expect(JSON.parse(localStorage.getItem("thoughtgraph:session") ?? "null")).toEqual(guestSession);
+    expect(authenticated).toHaveBeenCalledWith(DEMO_SESSION);
+    expect(JSON.parse(localStorage.getItem("thoughtgraph:session") ?? "null")).toEqual(DEMO_SESSION);
     await waitFor(() => expect(enterWorkspace).toHaveBeenCalledTimes(1), { timeout: 1200 });
   });
 
   it("keeps email sign-in available without creating a guest session", () => {
-    const guestSpy = vi.spyOn(graphApi, "enterAsGuest");
     render(<AuthLanding onAuthenticated={() => undefined} onEnterWorkspace={() => undefined} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Sign in with email/i }));
 
     expect(screen.getByRole("dialog", { name: /Enter your graph/i })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: /Email address/i })).toBeInTheDocument();
-    expect(guestSpy).not.toHaveBeenCalled();
   });
 
-  it("keeps the landing visible while the Render backend is waking", async () => {
-    vi.spyOn(graphApi, "enterAsGuest").mockImplementation(() => new Promise(() => undefined));
-    const { container } = render(
-      <AuthLanding onAuthenticated={() => undefined} onEnterWorkspace={() => undefined} />,
-    );
+  it("loads the sample graph locally after entry", async () => {
+    const getGraph = vi.spyOn(graphApi, "getGraph");
+    const getMe = vi.spyOn(graphApi, "getMe");
+    const enterWorkspace = vi.fn();
+    const view = render(<GraphShell showLanding onEnterWorkspace={enterWorkspace} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Enter the field/i }));
+    await waitFor(() => expect(enterWorkspace).toHaveBeenCalledTimes(1), { timeout: 1200 });
+    view.rerender(<GraphShell showLanding={false} onEnterWorkspace={enterWorkspace} />);
 
-    expect(await screen.findByRole("button", { name: /Waking the field/i })).toBeDisabled();
-    expect(screen.getByText(/See what your/i)).toBeInTheDocument();
-    expect(container.querySelector(".auth-shell")).not.toHaveClass("is-entering");
-  });
-
-  it("falls back to email sign-in when guest preview is unavailable", async () => {
-    vi.spyOn(graphApi, "enterAsGuest").mockRejectedValue(new Error("guest preview access is disabled"));
-    render(<AuthLanding onAuthenticated={() => undefined} onEnterWorkspace={() => undefined} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /Enter the field/i }));
-
-    expect(await screen.findByRole("dialog", { name: /Enter your graph/i })).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("guest preview access is disabled");
+    expect(await screen.findByTestId("graph-canvas")).toHaveTextContent("9 demo nodes");
+    expect(screen.getByText(/interactive demo/i)).toBeInTheDocument();
+    expect(getGraph).not.toHaveBeenCalled();
+    expect(getMe).not.toHaveBeenCalled();
   });
 });

@@ -61,6 +61,18 @@ import {
 } from "../lib/apiClient";
 import { nodeDisplayLabel } from "../lib/nodeDisplay";
 import { canReuseUploadedAsset, resolveComposerVisibility } from "../lib/composerDecisions";
+import {
+  DEMO_SESSION,
+  addDemoNode,
+  buildDemoDiscovery,
+  buildDemoThread,
+  isDemoSession,
+  loadDemoGraph,
+  loadDemoProfile,
+  saveDemoGraph,
+  saveDemoProfile,
+  searchDemoGraph,
+} from "../lib/demoWorkspace";
 
 const DEFAULT_VIEWPORT: GraphViewport = {
   center_x: 0,
@@ -437,6 +449,7 @@ function NodeComposer({
   onClose,
   onCreate,
   onBusyChange,
+  localOnly = false,
 }: {
   open: boolean;
   contextNode: NodeRead | null;
@@ -444,6 +457,7 @@ function NodeComposer({
   onClose: () => void;
   onCreate: (payload: NodeCreateRequest) => Promise<void>;
   onBusyChange: (busy: boolean) => void;
+  localOnly?: boolean;
 }) {
   const [kind, setKind] = useState<NodeCreateRequest["kind"]>("thought");
   const [title, setTitle] = useState("");
@@ -620,12 +634,13 @@ function NodeComposer({
                 type="button"
                 className={`composer-kind ${kind === item ? "selected" : ""}`}
                 onClick={() => handleKindChange(item)}
-                disabled={busy}
+                disabled={busy || (localOnly && (item === "image" || item === "video"))}
               >
                 {item}
               </button>
             ))}
           </div>
+          {localOnly ? <div className="drawer-empty">Demo captures thoughts and links in this browser only.</div> : null}
           <label className="modal-field">
             <span className="modal-label">title</span>
             <input className="modal-input" value={title} onChange={(event) => setTitle(event.currentTarget.value)} />
@@ -709,6 +724,7 @@ function NodeComposer({
             <select
               className="modal-input"
               value={visibility}
+              disabled={localOnly}
               onChange={(event) => setVisibility(event.currentTarget.value as NodeCreateRequest["visibility"])}
             >
               {visibilityOptions().map((option) => (
@@ -782,47 +798,20 @@ export function AuthLanding({
   const [showExplainer, setShowExplainer] = useState(false);
   const [landingMode, setLandingMode] = useState<LandingFieldMode>("connect");
   const [entering, setEntering] = useState(false);
-  const [guestBusy, setGuestBusy] = useState(false);
   const verifiedUrlTokenRef = useRef<string | null>(null);
   const enterTimerRef = useRef<number | null>(null);
-  const guestRequestRef = useRef<AbortController | null>(null);
-  const guestTimeoutRef = useRef<number | null>(null);
   const activeLandingMode = LANDING_MODES.find((mode) => mode.id === landingMode) ?? LANDING_MODES[1];
 
   useEffect(() => () => {
     if (enterTimerRef.current !== null) window.clearTimeout(enterTimerRef.current);
-    if (guestTimeoutRef.current !== null) window.clearTimeout(guestTimeoutRef.current);
-    guestRequestRef.current?.abort();
   }, []);
 
-  const enterField = async () => {
+  const enterField = () => {
     if (!onEnterWorkspace) return;
     if (!existingSession) {
-      setGuestBusy(true);
       setError(null);
-      const controller = new AbortController();
-      guestRequestRef.current = controller;
-      guestTimeoutRef.current = window.setTimeout(() => controller.abort(), 30_000);
-      try {
-        const guestSession = await graphApi.enterAsGuest(controller.signal);
-        saveSession(guestSession);
-        onAuthenticated(guestSession);
-      } catch (err) {
-        setAuthExpanded(true);
-        setError(
-          err instanceof DOMException && err.name === "AbortError"
-            ? "The Render backend did not respond within 30 seconds. Wait for it to show Live, then try again."
-            : err instanceof Error
-              ? err.message
-              : "Guest preview is unavailable. Sign in with email instead.",
-        );
-        return;
-      } finally {
-        if (guestTimeoutRef.current !== null) window.clearTimeout(guestTimeoutRef.current);
-        guestTimeoutRef.current = null;
-        guestRequestRef.current = null;
-        setGuestBusy(false);
-      }
+      saveSession(DEMO_SESSION);
+      onAuthenticated(DEMO_SESSION);
     }
     setEntering(true);
     enterTimerRef.current = window.setTimeout(onEnterWorkspace, 620);
@@ -925,15 +914,15 @@ export function AuthLanding({
           <strong>{activeLandingMode.readout}</strong>
         </div>
         <div className="landing-actions">
-          <button className="landing-primary" type="button" onClick={() => void enterField()} disabled={entering || guestBusy}>
-            {guestBusy ? "Waking the field" : entering ? "Entering the field" : "Enter the field"}
+          <button className="landing-primary" type="button" onClick={enterField} disabled={entering}>
+            {entering ? "Entering the field" : "Enter the field"}
             <ArrowRightIcon size={20} weight="bold" aria-hidden="true" />
           </button>
           <button
             className="landing-secondary"
             type="button"
             aria-expanded={authExpanded}
-            disabled={entering || guestBusy}
+            disabled={entering}
             onClick={() => {
               setError(null);
               setAuthExpanded(true);
@@ -946,7 +935,7 @@ export function AuthLanding({
             className="landing-secondary"
             type="button"
             aria-expanded={showExplainer}
-            disabled={entering || guestBusy}
+            disabled={entering}
             onClick={() => setShowExplainer((visible) => !visible)}
           >
             <PlayIcon size={16} weight="fill" aria-hidden="true" />
@@ -1704,6 +1693,7 @@ function NodeDetailPanel({
   onComposeReply,
   onComposeQuote,
   onClose,
+  localOnly = false,
 }: {
   node: NodeRead | null;
   thread: NodeThreadResponse | null;
@@ -1715,6 +1705,7 @@ function NodeDetailPanel({
   onComposeReply: () => void;
   onComposeQuote: () => void;
   onClose: () => void;
+  localOnly?: boolean;
 }) {
   const [mediaAsset, setMediaAsset] = useState<MediaAssetRead | null>(null);
   const [mediaBusy, setMediaBusy] = useState(false);
@@ -1787,6 +1778,13 @@ function NodeDetailPanel({
       return;
     }
 
+    if (localOnly) {
+      setRelatedIdeas(null);
+      setRelatedError(null);
+      setRelatedLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setRelatedLoading(true);
     setRelatedError(null);
@@ -1812,7 +1810,7 @@ function NodeDetailPanel({
     return () => {
       cancelled = true;
     };
-  }, [node?.id]);
+  }, [localOnly, node?.id]);
 
   if (!node) return null;
 
@@ -2158,6 +2156,7 @@ export function GraphShell({
   const [socialBusy, setSocialBusy] = useState(false);
   const [authOpen, setAuthOpen] = useState(!session);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const demoMode = isDemoSession(session);
   const trailRef = useRef<string[]>([]);
   const deferredGraphSearch = useDeferredValue(searchQuery);
   const deferredDiscoveryQuery = useDeferredValue(discoveryQuery);
@@ -2182,6 +2181,16 @@ export function GraphShell({
         setGraph(null);
         return;
       }
+      if (demoMode) {
+        const nextGraph = loadDemoGraph();
+        setGraph(nextGraph);
+        setSocialMode(false);
+        setViewport(nextGraph.viewport);
+        setHomeViewport(nextGraph.viewport);
+        setGraphError(null);
+        setLoadingGraph(false);
+        return;
+      }
       setLoadingGraph(true);
       setGraphError(null);
       try {
@@ -2196,7 +2205,7 @@ export function GraphShell({
         setLoadingGraph(false);
       }
     },
-    [session, socialMode],
+    [demoMode, session, socialMode],
   );
 
   const loadMe = useMemo(
@@ -2205,18 +2214,28 @@ export function GraphShell({
         setMe(null);
         return;
       }
+      if (demoMode) {
+        setMe(loadDemoProfile());
+        return;
+      }
       try {
         setMe(await graphApi.getMe());
       } catch (err) {
         setGraphError(err instanceof Error ? err.message : "Could not load profile.");
       }
     },
-    [session],
+    [demoMode, session],
   );
 
   const loadSocialLists = useMemo(
     () => async () => {
       if (!session) return;
+      if (demoMode) {
+        setFriends({ friends: [], incoming: [], outgoing: [] });
+        setNeighborhood({ items: [] });
+        setSocialError(null);
+        return;
+      }
       try {
         const [nextFriends, nextNeighborhood] = await Promise.all([
           graphApi.getFriends(),
@@ -2228,7 +2247,7 @@ export function GraphShell({
         setSocialError(err instanceof Error ? err.message : "Could not load social context.");
       }
     },
-    [session],
+    [demoMode, session],
   );
 
   const refreshWorkspace = useMemo(
@@ -2269,6 +2288,12 @@ export function GraphShell({
       return;
     }
 
+    if (demoMode) {
+      setSearchResults(graph ? searchDemoGraph(graph, deferredGraphSearch) : []);
+      setSearchLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setSearchLoading(true);
     void graphApi
@@ -2286,10 +2311,17 @@ export function GraphShell({
     return () => {
       cancelled = true;
     };
-  }, [deferredGraphSearch, searchOpen]);
+  }, [deferredGraphSearch, demoMode, graph, searchOpen]);
 
   useEffect(() => {
     if (!session || !discoveryOpen) {
+      return;
+    }
+
+    if (demoMode) {
+      setDiscoveryResults(graph ? buildDemoDiscovery(graph, deferredDiscoveryQuery) : null);
+      setDiscoveryError(null);
+      setDiscoveryLoading(false);
       return;
     }
 
@@ -2321,10 +2353,21 @@ export function GraphShell({
     return () => {
       cancelled = true;
     };
-  }, [deferredDiscoveryQuery, discoveryFilters, discoveryOpen, graph?.explanation.generated_at, session]);
+  }, [deferredDiscoveryQuery, demoMode, discoveryFilters, discoveryOpen, graph, session]);
 
   useEffect(() => {
     if (!session || !discoveryOpen) {
+      return;
+    }
+
+    if (demoMode) {
+      setAdjacentPeople({
+        materialization_id: "demo-adjacent",
+        generated_at: graph?.explanation.generated_at ?? new Date().toISOString(),
+        explanation_summary: "People discovery is available after email sign-in.",
+        items: [],
+      });
+      setAdjacentLoading(false);
       return;
     }
 
@@ -2352,11 +2395,18 @@ export function GraphShell({
     return () => {
       cancelled = true;
     };
-  }, [discoveryOpen, graph?.explanation.generated_at, session]);
+  }, [demoMode, discoveryOpen, graph?.explanation.generated_at, session]);
 
   useEffect(() => {
     if (!socialDrawerOpen || deferredPeopleSearch.trim().length < 2) {
       setPeopleResults([]);
+      return;
+    }
+
+    if (demoMode) {
+      setPeopleResults([]);
+      setPeopleLoading(false);
+      setSocialError("People search is available after email sign-in.");
       return;
     }
 
@@ -2378,7 +2428,7 @@ export function GraphShell({
     return () => {
       cancelled = true;
     };
-  }, [deferredPeopleSearch, socialDrawerOpen]);
+  }, [deferredPeopleSearch, demoMode, socialDrawerOpen]);
 
   useEffect(() => {
     const detailNodeId = focusedNodeId ?? selectedNodeId;
@@ -2395,6 +2445,16 @@ export function GraphShell({
     );
     setDetailThread(null);
     setDetailCluster(graph?.clusters.find((cluster) => cluster.id === base?.cluster_id) ?? null);
+
+    if (demoMode) {
+      const thread = graph ? buildDemoThread(graph, detailNodeId) : null;
+      setDetailThread(thread);
+      setDetailNode(thread?.root ?? (base ? fallbackNodeRead(base) : null));
+      if (thread?.root) {
+        trailRef.current = [thread.root.id, ...trailRef.current.filter((id) => id !== thread.root.id)].slice(0, 6);
+      }
+      return;
+    }
 
     let cancelled = false;
     void graphApi
@@ -2428,11 +2488,18 @@ export function GraphShell({
     return () => {
       cancelled = true;
     };
-  }, [focusedNodeId, graph, selectedNodeId, session]);
+  }, [demoMode, focusedNodeId, graph, selectedNodeId, session]);
 
   useEffect(() => {
     if (!socialDrawerOpen || !activeProfileUserId) {
       setActiveProfile(null);
+      return;
+    }
+
+    if (demoMode) {
+      setActiveProfile(null);
+      setActiveProfileLoading(false);
+      setSocialError("Profiles and relationships are available after email sign-in.");
       return;
     }
 
@@ -2457,7 +2524,7 @@ export function GraphShell({
     return () => {
       cancelled = true;
     };
-  }, [activeProfileUserId, socialDrawerOpen]);
+  }, [activeProfileUserId, demoMode, socialDrawerOpen]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -2533,12 +2600,31 @@ export function GraphShell({
   };
 
   const updateMe = async (payload: MeUpdateRequest) => {
+    if (demoMode) {
+      const next = { ...loadDemoProfile(), ...payload };
+      saveDemoProfile(next);
+      setMe(next);
+      return next;
+    }
     const next = await graphApi.updateMe(payload);
     setMe(next);
     return next;
   };
 
   const createNode = async (payload: NodeCreateRequest) => {
+    if (demoMode) {
+      const next = addDemoNode(graph ?? loadDemoGraph(), payload);
+      saveDemoGraph(next);
+      setGraph(next);
+      const nextProfile = {
+        ...loadDemoProfile(),
+        node_count: next.nodes.length,
+        cluster_count: next.clusters.length,
+      };
+      saveDemoProfile(nextProfile);
+      setMe(nextProfile);
+      return;
+    }
     await graphApi.createNode(payload);
     await refreshWorkspace();
   };
@@ -2556,7 +2642,7 @@ export function GraphShell({
 
   const handleLogout = async () => {
     try {
-      await graphApi.logout();
+      if (!demoMode) await graphApi.logout();
     } finally {
       clearSession();
       setSession(null);
@@ -2581,6 +2667,10 @@ export function GraphShell({
   };
 
   const toggleSocialMode = () => {
+    if (demoMode) {
+      setGraphError("The social field needs a server-backed account. Use email sign-in when the backend is available.");
+      return;
+    }
     const nextSocialMode = !socialMode;
     setSocialMode(nextSocialMode);
     setSelectedNodeId(null);
@@ -2620,6 +2710,10 @@ export function GraphShell({
       | { kind: "friend"; action: "request" | "accept" | "decline" | "remove" }
       | { kind: "restriction"; restriction: RestrictionUpdate["kind"]; active: boolean },
   ) => {
+    if (demoMode) {
+      setSocialError("Relationships are available after email sign-in.");
+      return;
+    }
     setSocialBusy(true);
     setSocialError(null);
     try {
@@ -2677,11 +2771,27 @@ export function GraphShell({
         socialMode={socialMode}
         syncing={loadingGraph}
         onOpenDiscovery={() => setDiscoveryOpen(true)}
-        onOpenSystems={() => setSystemsOpen(true)}
+        onOpenSystems={() => {
+          if (demoMode) {
+            setGraphError("Evidence-backed reflections need a server-backed history. The visual field remains fully explorable here.");
+            return;
+          }
+          setSystemsOpen(true);
+        }}
         onToggleSocialMode={toggleSocialMode}
         onOpenComposer={() => openComposer("new")}
-        onOpenProfile={() => openProfile(me?.id)}
+        onOpenProfile={() => {
+          if (demoMode) {
+            setGraphError("Profile editing is available after email sign-in.");
+            return;
+          }
+          openProfile(me?.id);
+        }}
         onOpenPeople={() => {
+          if (demoMode) {
+            setGraphError("People and relationships are available after email sign-in.");
+            return;
+          }
           setSocialDrawerOpen(true);
           setActiveProfileUserId(activeProfileUserId ?? me?.id ?? null);
           void refreshSocialContext();
@@ -2736,6 +2846,7 @@ export function GraphShell({
           onComposeReply={() => openComposer("reply")}
           onComposeQuote={() => openComposer("quote")}
           onClose={returnToSelf}
+          localOnly={demoMode}
         />
       ) : null}
       <SearchPanel
@@ -2805,9 +2916,14 @@ export function GraphShell({
         onClose={() => setComposerOpen(false)}
         onCreate={createNode}
         onBusyChange={setComposerBusy}
+        localOnly={demoMode}
       />
       {graphError ? <div className="global-error">{graphError}</div> : null}
-      {loadingGraph ? <div className="global-status">loading graph</div> : null}
+      {demoMode ? (
+        <div className="global-status">interactive demo · saved in this browser</div>
+      ) : loadingGraph ? (
+        <div className="global-status">loading graph</div>
+      ) : null}
     </div>
   );
 }

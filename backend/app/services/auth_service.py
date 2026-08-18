@@ -17,7 +17,6 @@ from app.services.user_service import DEFAULT_NOTIFICATION_PREFS
 
 MAGIC_TTL = timedelta(minutes=15)
 SESSION_TTL = timedelta(days=30)
-GUEST_SESSION_TTL = timedelta(days=1)
 
 
 def normalize_email(email: str) -> str:
@@ -104,28 +103,6 @@ def _issue_session(
     session.commit()
     session.refresh(user)
     return VerifiedSession(session_token=raw_session, user=user, is_new_user=is_new_user)
-
-
-def issue_guest_session(session: Session) -> VerifiedSession:
-    user = User(
-        id=f"guest-{uuid.uuid4().hex[:16]}",
-        email=None,
-        display_name="Guest Explorer",
-        bio="",
-        is_public=False,
-        is_admin=False,
-        created_at_public=False,
-        serendipity_enabled=False,
-        notification_prefs=DEFAULT_NOTIFICATION_PREFS.copy(),
-    )
-    session.add(user)
-    session.flush()
-    return _issue_session(
-        session,
-        user,
-        is_new_user=True,
-        ttl=GUEST_SESSION_TTL,
-    )
 
 
 def verify_magic_and_issue_session(session: Session, raw_token: str) -> VerifiedSession | None:

@@ -17,28 +17,12 @@ from app.schemas.auth import (
 )
 from app.services.email_service import email_provider_configured, send_magic_link_email
 from app.services.auth_service import (
-    issue_guest_session,
     issue_magic_link,
     revoke_session,
     verify_magic_and_issue_session,
 )
 
 router = APIRouter(prefix="/auth")
-
-
-@router.post("/guest", response_model=VerifyResponse)
-def enter_as_guest(session: Session = Depends(get_db)) -> VerifyResponse:
-    settings = get_settings()
-    if settings.auth_mode != "development" or not settings.allow_guest_access:
-        raise HTTPException(status_code=403, detail="guest preview access is disabled")
-    issued = issue_guest_session(session)
-    return VerifyResponse(
-        session_token=issued.session_token,
-        user_id=issued.user.id,
-        display_name=issued.user.display_name,
-        email="",
-        is_new_user=True,
-    )
 
 
 def _extract_bearer(authorization: str | None) -> str | None:
