@@ -782,28 +782,46 @@ export function AuthLanding({
   const [showExplainer, setShowExplainer] = useState(false);
   const [landingMode, setLandingMode] = useState<LandingFieldMode>("connect");
   const [entering, setEntering] = useState(false);
+  const [guestBusy, setGuestBusy] = useState(false);
   const verifiedUrlTokenRef = useRef<string | null>(null);
   const enterTimerRef = useRef<number | null>(null);
+  const guestRequestRef = useRef<AbortController | null>(null);
+  const guestTimeoutRef = useRef<number | null>(null);
   const activeLandingMode = LANDING_MODES.find((mode) => mode.id === landingMode) ?? LANDING_MODES[1];
 
   useEffect(() => () => {
     if (enterTimerRef.current !== null) window.clearTimeout(enterTimerRef.current);
+    if (guestTimeoutRef.current !== null) window.clearTimeout(guestTimeoutRef.current);
+    guestRequestRef.current?.abort();
   }, []);
 
   const enterField = async () => {
     if (!onEnterWorkspace) return;
     if (!existingSession) {
-      setEntering(true);
+      setGuestBusy(true);
       setError(null);
+      const controller = new AbortController();
+      guestRequestRef.current = controller;
+      guestTimeoutRef.current = window.setTimeout(() => controller.abort(), 30_000);
       try {
-        const guestSession = await graphApi.enterAsGuest();
+        const guestSession = await graphApi.enterAsGuest(controller.signal);
         saveSession(guestSession);
         onAuthenticated(guestSession);
       } catch (err) {
-        setEntering(false);
         setAuthExpanded(true);
-        setError(err instanceof Error ? err.message : "Guest preview is unavailable. Sign in with email instead.");
+        setError(
+          err instanceof DOMException && err.name === "AbortError"
+            ? "The Render backend did not respond within 30 seconds. Wait for it to show Live, then try again."
+            : err instanceof Error
+              ? err.message
+              : "Guest preview is unavailable. Sign in with email instead.",
+        );
         return;
+      } finally {
+        if (guestTimeoutRef.current !== null) window.clearTimeout(guestTimeoutRef.current);
+        guestTimeoutRef.current = null;
+        guestRequestRef.current = null;
+        setGuestBusy(false);
       }
     }
     setEntering(true);
@@ -907,14 +925,15 @@ export function AuthLanding({
           <strong>{activeLandingMode.readout}</strong>
         </div>
         <div className="landing-actions">
-          <button className="landing-primary" type="button" onClick={() => void enterField()} disabled={entering}>
-            {entering ? "Entering the field" : "Enter the field"}
+          <button className="landing-primary" type="button" onClick={() => void enterField()} disabled={entering || guestBusy}>
+            {guestBusy ? "Waking the field" : entering ? "Entering the field" : "Enter the field"}
             <ArrowRightIcon size={20} weight="bold" aria-hidden="true" />
           </button>
           <button
             className="landing-secondary"
             type="button"
             aria-expanded={authExpanded}
+            disabled={entering || guestBusy}
             onClick={() => {
               setError(null);
               setAuthExpanded(true);
@@ -927,6 +946,7 @@ export function AuthLanding({
             className="landing-secondary"
             type="button"
             aria-expanded={showExplainer}
+            disabled={entering || guestBusy}
             onClick={() => setShowExplainer((visible) => !visible)}
           >
             <PlayIcon size={16} weight="fill" aria-hidden="true" />

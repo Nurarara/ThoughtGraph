@@ -56,6 +56,19 @@ describe("AuthLanding guest entry", () => {
     expect(guestSpy).not.toHaveBeenCalled();
   });
 
+  it("keeps the landing visible while the Render backend is waking", async () => {
+    vi.spyOn(graphApi, "enterAsGuest").mockImplementation(() => new Promise(() => undefined));
+    const { container } = render(
+      <AuthLanding onAuthenticated={() => undefined} onEnterWorkspace={() => undefined} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Enter the field/i }));
+
+    expect(await screen.findByRole("button", { name: /Waking the field/i })).toBeDisabled();
+    expect(screen.getByText(/See what your/i)).toBeInTheDocument();
+    expect(container.querySelector(".auth-shell")).not.toHaveClass("is-entering");
+  });
+
   it("falls back to email sign-in when guest preview is unavailable", async () => {
     vi.spyOn(graphApi, "enterAsGuest").mockRejectedValue(new Error("guest preview access is disabled"));
     render(<AuthLanding onAuthenticated={() => undefined} onEnterWorkspace={() => undefined} />);
