@@ -924,6 +924,7 @@ export const graphApi = {
       method: "DELETE",
     }),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+  enterAsGuest: () => request<SessionPayload>("/auth/guest", { method: "POST" }),
   requestLink: (email: string) =>
     request<MagicLinkResponse>("/auth/request-link", {
       method: "POST",

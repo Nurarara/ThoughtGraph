@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     admin_user_ids: list[str] = Field(default_factory=list)
     allow_dev_auth_bypass: bool = True
     allow_dev_user_header_impersonation: bool = False
+    allow_guest_access: bool = False
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:5174",

@@ -761,7 +761,7 @@ function NodeComposer({
   );
 }
 
-function AuthLanding({
+export function AuthLanding({
   onAuthenticated,
   notice,
   existingSession,
@@ -790,10 +790,21 @@ function AuthLanding({
     if (enterTimerRef.current !== null) window.clearTimeout(enterTimerRef.current);
   }, []);
 
-  const enterField = () => {
-    if (!existingSession || !onEnterWorkspace) {
-      setAuthExpanded(true);
-      return;
+  const enterField = async () => {
+    if (!onEnterWorkspace) return;
+    if (!existingSession) {
+      setEntering(true);
+      setError(null);
+      try {
+        const guestSession = await graphApi.enterAsGuest();
+        saveSession(guestSession);
+        onAuthenticated(guestSession);
+      } catch (err) {
+        setEntering(false);
+        setAuthExpanded(true);
+        setError(err instanceof Error ? err.message : "Guest preview is unavailable. Sign in with email instead.");
+        return;
+      }
     }
     setEntering(true);
     enterTimerRef.current = window.setTimeout(onEnterWorkspace, 620);
@@ -896,9 +907,21 @@ function AuthLanding({
           <strong>{activeLandingMode.readout}</strong>
         </div>
         <div className="landing-actions">
-          <button className="landing-primary" type="button" onClick={enterField} disabled={entering}>
+          <button className="landing-primary" type="button" onClick={() => void enterField()} disabled={entering}>
             {entering ? "Entering the field" : "Enter the field"}
             <ArrowRightIcon size={20} weight="bold" aria-hidden="true" />
+          </button>
+          <button
+            className="landing-secondary"
+            type="button"
+            aria-expanded={authExpanded}
+            onClick={() => {
+              setError(null);
+              setAuthExpanded(true);
+            }}
+          >
+            <PaperPlaneTiltIcon size={16} aria-hidden="true" />
+            Sign in with email
           </button>
           <button
             className="landing-secondary"

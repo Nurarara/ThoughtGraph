@@ -14,6 +14,7 @@ from app.db import session as db_session
 from app.db.session import set_database_url
 from app.main import create_app
 from app.models.content_node import ContentNode
+from app.models.user import User
 
 
 @pytest.fixture(autouse=True)
@@ -112,6 +113,61 @@ def test_magic_link_email_is_normalized_and_reuses_existing_user(client: TestCli
     assert second_verified.status_code == 200
     assert second_verified.json()["user_id"] == first_verified.json()["user_id"]
     assert second_verified.json()["is_new_user"] is False
+
+
+def test_guest_preview_is_disabled_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("THOUGHTGRAPH_ALLOW_GUEST_ACCESS", raising=False)
+    get_settings.cache_clear()
+    with make_client(tmp_path) as guest_client:
+        response = guest_client.post("/api/auth/guest")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "guest preview access is disabled"
+
+
+def test_guest_preview_issues_an_isolated_private_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("THOUGHTGRAPH_ALLOW_GUEST_ACCESS", "true")
+    monkeypatch.setenv("THOUGHTGRAPH_ALLOW_DEV_AUTH_BYPASS", "false")
+    get_settings.cache_clear()
+    with make_client(tmp_path) as guest_client:
+        first = guest_client.post("/api/auth/guest")
+        second = guest_client.post("/api/auth/guest")
+        first_payload = first.json()
+        me = guest_client.get(
+            "/api/users/me",
+            headers={"Authorization": f"Bearer {first_payload['session_token']}"},
+        )
+        with db_session.SessionLocal() as session:
+            stored_guest = session.get(User, first_payload["user_id"])
+            assert stored_guest is not None
+            assert stored_guest.is_admin is False
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first_payload["user_id"].startswith("guest-")
+    assert first_payload["user_id"] != second.json()["user_id"]
+    assert first_payload["display_name"] == "Guest Explorer"
+    assert first_payload["email"] == ""
+    assert me.status_code == 200
+    assert me.json()["id"] == first_payload["user_id"]
+    assert me.json()["is_public"] is False
+
+
+def test_guest_preview_remains_disabled_in_production(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("THOUGHTGRAPH_AUTH_MODE", "production")
+    monkeypatch.setenv("THOUGHTGRAPH_ALLOW_GUEST_ACCESS", "true")
+    get_settings.cache_clear()
+    with make_client(tmp_path) as prod_client:
+        response = prod_client.post("/api/auth/guest")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "guest preview access is disabled"
 
 
 def test_production_request_link_requires_email_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
